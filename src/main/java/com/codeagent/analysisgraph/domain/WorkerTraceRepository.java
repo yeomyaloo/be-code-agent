@@ -15,4 +15,8 @@ public interface WorkerTraceRepository extends JpaRepository<WorkerTrace, Long> 
             limit :limit
             """)
     List<WorkerTrace> search(Long jobId, String q, int limit);
+
+    List<WorkerTrace> findByJobIdOrderById(Long jobId);
+
+    List<WorkerTrace> findByJobIdAndIntentionIdOrderById(Long jobId, Long intentionId);
 }

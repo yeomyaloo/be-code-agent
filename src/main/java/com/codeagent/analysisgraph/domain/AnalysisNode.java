@@ -53,4 +53,8 @@ public class AnalysisNode {
     public void complete() {
         this.status = AnalysisNodeStatus.DONE;
     }
+
+    public void fail() {
+        this.status = AnalysisNodeStatus.FAILED;
+    }
 }

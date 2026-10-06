@@ -27,6 +27,12 @@ public class AnalysisJob {
 
     private long usedTokens;
 
+    private long inputTokens;
+
+    private long outputTokens;
+
+    private String error;
+
     private OffsetDateTime startedAt;
 
     private OffsetDateTime finishedAt;
@@ -35,5 +41,26 @@ public class AnalysisJob {
         this.project = project;
         this.budgetTokens = budgetTokens;
         this.status = JobStatus.PENDING;
+    }
+
+    public void start() {
+        this.status = JobStatus.RUNNING;
+        this.startedAt = OffsetDateTime.now();
+    }
+
+    public void finish(JobStatus status, String error) {
+        this.status = status;
+        this.error = error;
+        this.finishedAt = OffsetDateTime.now();
+    }
+
+    public void addUsage(long inputTokens, long outputTokens) {
+        this.inputTokens += inputTokens;
+        this.outputTokens += outputTokens;
+        this.usedTokens = this.inputTokens + this.outputTokens;
+    }
+
+    public long remainingTokens() {
+        return budgetTokens == null ? Long.MAX_VALUE : Math.max(0, budgetTokens - usedTokens);
     }
 }

@@ -5,7 +5,7 @@
 be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그래프**를 만들고, 그 위에서 LLM 에이전트가 "사용자 입력이 위험한 API까지 도달하는가"를 추적해 취약점을 찾고 검증하는 것을 목표로 한다.
 아키텍처는 [ARTEX](https://github.com/Autumn-27/ARTEX)의 이중 그래프 + Planner/Worker 구조를 참고했고, 코드는 모두 새로 작성했다. ARTEX가 **살아있는 서버**를 탐색한다면, be-code-agent는 **소스코드**를 탐색한다.
 
-> 현재 단계: **코드 그래프 생성·조회까지 구현됨.** 분석 그래프는 DB 스키마와 엔티티만 있고, Planner/Worker 에이전트 루프는 아직 구현 전이다. 자세한 내용은 [진행 상황](#진행-상황)을 참고.
+> 현재 단계: **코드 그래프 생성·조회, Claude 연동 Worker 에이전트 루프까지 구현됨.** 할 일은 코드 그래프의 진입점 → 위험 지점 경로에서 기계적으로 만들고 Worker 하나가 차례로 처리한다. LLM Planner, 병렬 Worker, 발견 검증(Verifier)은 아직 구현 전이다. 자세한 내용은 [진행 상황](#진행-상황)을 참고.
 
 ---
 
@@ -48,11 +48,24 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 
 - **진입점 → 위험 지점 경로 탐색**: PostgreSQL 재귀 CTE로 "어느 API에서 어느 위험 지점까지 어떤 메서드들을 거쳐 도달하는지"를 뽑는다. 인터페이스를 거치는 호출도 따라간다.
 
-### 에이전트 분석 (예정)
+### 에이전트 분석 (일부 구현됨)
 
-- Planner가 아직 검사하지 않은 진입점·경로에 대해서만 분석 할 일(intention)을 만들고, 여러 Worker가 나눠서 조사
-- 데이터 흐름 증거를 붙여 발견(finding)을 기록하고, 별도 검증 단계에서 오탐을 걸러냄
-- SARIF / HTML 보고서 내보내기
+- **할 일 생성**: 진입점 → 위험 지점 경로마다 (진입점, 위험 지점) 쌍 하나당 가장 짧은 경로로 할 일(INTENTION)을 만든다.
+- **Worker 에이전트 루프**: Claude가 도구를 호출하며 "외부 입력이 막힘 없이 위험 지점까지 가는가"를 코드로 확인하고, 판정(취약 / 취약하지 않음 / 판단 불가)과 근거를 남긴다. 모든 단계는 `worker_trace`에 기록된다.
+- **Worker 도구 8개**
+
+  | 도구 | 하는 일 |
+  |---|---|
+  | `read_file` | 저장소 파일을 줄 번호와 함께 읽음 (한 번에 최대 400줄, 저장소 밖 경로 차단) |
+  | `grep_code` | 정규식으로 코드 검색 (최대 80건) |
+  | `find_code_nodes` | 코드 그래프 노드를 이름으로 찾기 |
+  | `get_callers` / `get_callees` | 호출하는 쪽 / 호출 대상 (인터페이스 ↔ 구현 포함) |
+  | `search_worker_traces` | 같은 분석 작업의 다른 Worker 기록 검색 |
+  | `record_fact` | 코드에서 확인한 사실 기록 |
+  | `record_finding` | 취약점 발견 기록 (근거 코드 위치 필수, 검증 대기 상태로 저장) |
+
+- **멈춤 조건**: 할 일당 최대 단계 수, 분석 작업 토큰 예산, 응답 잘림, 모델 거절, 컨텍스트 초과. 첫 호출부터 실패하면(인증 오류 등) 작업 전체를 멈춘다.
+- **예정**: LLM Planner가 아직 검사하지 않은 경로만 골라 할 일 배포, 여러 Worker 병렬 실행, Verifier의 오탐 제거, SARIF / HTML 보고서
 
 ---
 
@@ -63,8 +76,9 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 1 | 프로젝트 뼈대, DB 스키마 (코드 그래프 + 분석 그래프) | ✅ 완료 |
 | 2 | 코드 그래프 생성 (Java/Spring 파싱, 진입점·위험 지점·호출 관계) | ✅ 완료 |
 | 3 | 코드 그래프 조회 API (진입점, 위험 지점, 호출 경로, 호출자/피호출자) | ✅ 완료 |
-| 4 | LLM 연동, Worker 도구(`read_file`, `get_callers`, `trace_dataflow` 등) | ⬜ 예정 |
-| 5 | Planner/Worker 실행 루프, 공유 할 일 목록 | ⬜ 예정 |
+| 4 | LLM 연동(Anthropic Java SDK), Worker 도구 8개, Worker 에이전트 루프 | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
+| 5 | 공유 할 일 목록(`SKIP LOCKED`)과 분석 작업 API | ✅ 완료 |
+| 5-1 | LLM Planner, Worker 병렬 실행 | ⬜ 예정 |
 | 6 | 발견 검증(오탐 제거), 증거 수집 | ⬜ 예정 |
 | 7 | 보고서 (SARIF, HTML) | ⬜ 예정 |
 | 8 | 웹 UI, 실시간 진행 상황(SSE), 사람 승인 단계 | ⬜ 예정 |
@@ -89,7 +103,28 @@ create database codeagent owner codeagent;
 
 테이블은 애플리케이션 시작 시 Flyway(`src/main/resources/db/migration`)가 자동으로 만든다.
 
-### 2. 실행
+### 2. Anthropic API 키 등록
+
+에이전트 분석(`/analyses`)에만 필요하다. 코드 그래프 생성·조회는 키 없이 된다.
+
+1. [Anthropic Console](https://console.anthropic.com)에서 API 키를 발급받는다.
+2. 견본 파일을 복사해서 `application-local.yml`을 만든다.
+
+   ```bash
+   cp src/main/resources/application-local.yml.example src/main/resources/application-local.yml
+   ```
+
+3. `application-local.yml`에 키를 적는다.
+
+   ```yaml
+   codeagent:
+     llm:
+       api-key: sk-ant-...
+   ```
+
+`application-local.yml`은 `.gitignore`에 들어 있어서 git에 올라가지 않는다. **키를 `application.yml`에 직접 적지 말 것.** 자세한 내용은 [비밀 값 관리](#비밀-값-관리) 참고.
+
+### 3. 실행
 
 ```bash
 ./gradlew bootRun
@@ -109,9 +144,40 @@ Windows PowerShell에서는 `.\gradlew.bat bootRun`.
 | `DB_URL` | `jdbc:postgresql://localhost:5432/codeagent` | DB 접속 URL |
 | `DB_USERNAME` | `codeagent` | DB 사용자 |
 | `DB_PASSWORD` | `codeagent` | DB 비밀번호 |
+| `ANTHROPIC_API_KEY` | (없음) | Anthropic API 키 (`codeagent.llm.api-key`) |
 
-- JPA는 `ddl-auto: validate`라서 스키마 변경은 반드시 Flyway 마이그레이션 파일(`V2__...sql`)로 한다.
+- JPA는 `ddl-auto: validate`라서 스키마 변경은 반드시 Flyway 마이그레이션 파일(`V3__...sql`처럼 다음 번호)로 한다. 이미 적용된 마이그레이션 파일은 고치지 않는다.
 - 가상 스레드(`spring.threads.virtual.enabled`)가 켜져 있다.
+
+### 비밀 값 관리
+
+API 키·비밀번호 같은 비밀 값은 `application.yml`에 **자리만** 두고, 실제 값은 git에 올라가지 않는 곳에 둔다.
+
+| 파일 / 위치 | 내용 | git |
+|---|---|---|
+| `src/main/resources/application.yml` | `api-key: ${ANTHROPIC_API_KEY:}` 처럼 자리만 있음 | 올라감 |
+| `src/main/resources/application-local.yml` | 개인 PC의 실제 값 (앱 시작 시 자동으로 읽음) | **안 올라감** |
+| `src/main/resources/application-local.yml.example` | 위 파일의 견본 | 올라감 |
+| 환경 변수 | 서버 배포 시 권장 | - |
+
+값을 읽는 순서는 `application-local.yml` → 환경 변수다. `application-local.yml`에 `codeagent.llm.api-key`가 있으면 그 값을 쓰고, 없으면 환경 변수 `ANTHROPIC_API_KEY`를 쓴다.
+
+`.gitignore`는 이 밖에도 `.env`, `*.pem`·`*.key` 같은 인증서 파일, `application-secret.yml`, 로그 파일을 제외한다.
+
+### LLM 설정
+
+`application.yml`의 `codeagent.llm`, `codeagent.agent`에서 바꾼다.
+
+| 설정 | 기본값 | 설명 |
+|---|---|---|
+| `codeagent.llm.worker.model` | `claude-sonnet-5-5` | Worker가 쓰는 모델 |
+| `codeagent.llm.worker.effort` | `medium` | Worker 추론 깊이 (`low` / `medium` / `high` / `xhigh` / `max`) |
+| `codeagent.llm.planner.*`, `verifier.*` | `claude-opus-5-5`, `high` | Planner·Verifier용 (아직 사용하는 코드 없음) |
+| `codeagent.llm.max-tokens` | `16000` | 응답 하나의 최대 출력 토큰 |
+| `codeagent.llm.fallbacks` | `true` | 모델이 안전 분류기로 요청을 거절하면 서버가 다른 모델로 자동 재시도 |
+| `codeagent.agent.max-steps` | `40` | 할 일 하나에 쓸 수 있는 최대 LLM 호출 횟수 |
+
+시스템 프롬프트(`agent/WorkerPrompts.java`)는 할 일마다 같아서 프롬프트 캐시가 걸려 있다.
 
 ---
 
@@ -147,6 +213,24 @@ curl -X POST localhost:8080/api/projects/1/index
 | `GET /api/projects/{id}/code-graph/nodes/{nodeId}/callers` | 이 메서드를 호출하는 메서드 |
 | `GET /api/projects/{id}/code-graph/nodes/{nodeId}/callees` | 이 메서드가 호출하는 메서드·위험 지점 |
 
+### 4. 에이전트 분석 (API 키 필요)
+
+```bash
+# 분석 시작 (백그라운드 실행, 바로 202 응답). 생략 시 할 일 5개, 토큰 예산 200만
+curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: application/json" \
+     -d '{"maxIntentions":2,"budgetTokens":300000}'
+```
+
+| API | 설명 |
+|---|---|
+| `POST /api/projects/{id}/analyses` | 분석 시작. `maxIntentions`(1~100), `budgetTokens`(1만 이상) |
+| `GET /api/analyses/{jobId}` | 작업 상태(`RUNNING` / `DONE` / `STOPPED` / `FAILED`), 토큰 사용량, 오류, 분석 그래프 노드 전체 |
+| `GET /api/analyses/{jobId}/findings` | 발견 목록 (CWE, 심각도, 확신도, 근거 코드 위치) |
+| `GET /api/analyses/{jobId}/traces?intentionId=` | Worker 분석 기록 (Claude 응답, 도구 호출·결과) |
+
+할 일마다 "할 일 #N 결론" FACT 노드에 Worker의 최종 판정과 사용 토큰이 남는다.
+코드 그래프를 먼저 만들어야 하며, 진입점 → 위험 지점 경로가 하나도 없으면 400을 돌려준다.
+
 ---
 
 ## 개발
@@ -157,7 +241,10 @@ curl -X POST localhost:8080/api/projects/1/index
 ```
 
 - `CodeGraphBuilderTest`는 DB 없이 돈다. 일부러 취약하게 만든 예제 앱(`src/test/resources/fixtures/vulnerable-app`)을 파싱해서 진입점·위험 지점·상속 연결·도달 경로를 검증한다.
+- `FileToolsTest`는 DB 없이 돈다. `read_file`·`grep_code` 도구의 범위 읽기, 저장소 밖 경로 차단, 입력 오류 처리를 검증한다.
 - `CodeAgentApplicationTests`는 스프링 컨텍스트를 띄우므로 PostgreSQL이 떠 있어야 한다.
+- `AnalysisFlowTest`는 실제 Claude 대신 가짜 `AgentLoop`가 도구를 직접 호출해서 할 일 생성 → 배분 → 사실·발견 기록 → 작업 종료 흐름을 검증한다. API 키는 필요 없지만 PostgreSQL이 필요하고, **로컬 `codeagent` DB에 테스트 데이터(프로젝트·분석 작업)를 남긴다.**
+- **Worker 도구 추가**: `agent/tool/AgentTool`을 구현한 `@Component`를 만들면 Worker에 자동으로 등록된다. 잘못된 입력은 `ToolInputException`을 던지면 Claude에게 오류로 전달되어 다시 시도하게 된다.
 - **위험 지점 규칙 추가**: `codegraph/ingest/SinkRules.java`의 `RULES`에 `rule(타입 FQN, 분류, CWE, 메서드...)`를 추가한다. 생성자는 메서드 이름 `<init>`으로 적는다.
 - **진입점 종류 추가**: `codegraph/ingest/EntryPointDetector.java`를 확장한다.
 
@@ -173,6 +260,7 @@ curl -X POST localhost:8080/api/projects/1/index
 | 빌드 | Gradle 9.7 |
 | DB | PostgreSQL + Flyway 마이그레이션, 그래프 탐색은 재귀 CTE |
 | 코드 파싱 | JavaParser 3.26 + symbol solver |
+| LLM | Anthropic Java SDK 2.68 (Worker: Claude Sonnet 5.5, Planner·Verifier: Claude Opus 5.5) |
 | 기타 | Lombok, 가상 스레드 |
 
 ### 핵심 개념: 이중 그래프
@@ -228,6 +316,23 @@ CodeGraphDraft             DB 저장 전 메모리 그래프 (중복 제거)
 CodeGraphIndexer           기존 그래프 삭제 후 JdbcTemplate 배치 insert (500건 단위)
 ```
 
+### 현재 에이전트 실행 흐름
+
+```
+POST /analyses
+  │
+  ▼
+AnalysisService.start()     진입점 → 위험 지점 경로마다 INTENTION 생성 (GOAL ─SPAWNS→ INTENTION, anchor 연결)
+  │                         가상 스레드에서 Worker 시작
+  ▼
+claimNextIntention()        선행 할 일(DEPENDS_ON)이 끝난 OPEN 할 일 하나를 CLAIMED로 (SELECT ... FOR UPDATE SKIP LOCKED)
+  ▼
+AgentLoop.run()             Claude 호출 → tool_use면 도구 실행 → tool_result 돌려줌 → 반복
+  │                         매 단계 worker_trace 기록, 토큰 사용량 누적
+  ▼
+결론 FACT 기록, INTENTION을 DONE / FAILED로 → 다음 할 일 (없거나 예산 소진 시 작업 종료)
+```
+
 ### 계획 중인 에이전트 실행 구조
 
 ARTEX의 Planner 반복 + Worker 병렬 실행 구조를 그대로 가져갈 계획이다.
@@ -275,14 +380,27 @@ be-code-agent/
 │   │   │   ├── CodeGraphDraft.java                  저장 전 메모리 그래프
 │   │   │   └── CodeGraphIndexer.java                DB 저장 (재생성)
 │   │   └── query/CodeGraphQuery.java                조회, 재귀 CTE 경로 탐색
-│   ├── analysisgraph/domain/                        AnalysisNode/Edge, Anchor, WorkerTrace
-│   ├── api/                                         REST 컨트롤러
+│   ├── analysisgraph/
+│   │   ├── domain/                                  AnalysisNode/Edge, Anchor, WorkerTrace
+│   │   └── AnalysisGraphService.java                분석 그래프 노드·연결선·연결점 기록
+│   ├── llm/                                         LLM 설정(LlmProperties, AgentProperties), Anthropic 클라이언트
+│   ├── agent/
+│   │   ├── AgentLoop.java                           도구 호출 반복 흐름 (Claude ↔ 도구)
+│   │   ├── WorkerPrompts.java                       Worker 시스템 프롬프트, 할 일 프롬프트
+│   │   └── tool/                                    Worker 도구 8개, 입력 검증(ToolInput)
+│   ├── orchestrator/AnalysisService.java            분석 작업 생성, 할 일 배분, Worker 실행
+│   ├── api/                                         REST 컨트롤러 (프로젝트, 코드 그래프, 분석)
 │   └── common/GlobalExceptionHandler.java           404 / 400 응답 변환
 ├── src/main/resources/
-│   ├── application.yml
-│   └── db/migration/V1__init.sql                    전체 스키마
+│   ├── application.yml                              공통 설정 (비밀 값은 자리만)
+│   ├── application-local.yml.example                개인 비밀 값 파일 견본
+│   └── db/migration/
+│       ├── V1__init.sql                             전체 스키마
+│       └── V2__job_error_and_usage.sql              분석 작업 오류·토큰 사용량 칸
 └── src/test/
     ├── java/.../CodeGraphBuilderTest.java           코드 그래프 테스트 (DB 불필요)
+    ├── java/.../FileToolsTest.java                  파일 도구 테스트 (DB 불필요)
+    ├── java/.../AnalysisFlowTest.java               분석 흐름 통합 테스트 (DB 필요, API 키 불필요)
     └── resources/fixtures/vulnerable-app/           테스트용 취약 예제 앱
 ```
 
@@ -295,6 +413,7 @@ be-code-agent/
 ## 사용 기술
 
 - [JavaParser](https://javaparser.org/) (Apache-2.0 / LGPL-3.0 중 선택): Java 소스 파싱, 타입 해석
+- [Anthropic Java SDK](https://github.com/anthropics/anthropic-sdk-java) (MIT): Claude API 호출
 - [CWE](https://cwe.mitre.org/) (MITRE): 위험 지점과 발견에 붙이는 취약점 분류 번호 (예: CWE-89 SQL 인젝션)
 
 ---
@@ -303,3 +422,5 @@ be-code-agent/
 
 - 이 도구는 **본인이 소유했거나 분석 권한을 받은 소스코드**의 보안 점검용이다.
 - 분석 결과는 정적 분석과 LLM 판단에 기반하므로 오탐·미탐이 있을 수 있다. 최종 판단은 사람이 검토해서 내려야 한다.
+- 에이전트 분석은 분석 대상 소스코드 일부를 Anthropic API로 전송한다. 외부로 보내면 안 되는 코드는 분석하지 말 것.
+- 에이전트 분석은 Anthropic API 사용량만큼 비용이 든다. `budgetTokens`로 작업당 상한을 정할 수 있다.

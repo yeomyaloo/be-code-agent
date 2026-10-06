@@ -35,3 +35,35 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### 비밀 정보 (API 키, DB 비밀번호 등) ###
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+application-local.yml
+application-local.yaml
+application-local.properties
+application-secret.yml
+application-secret.yaml
+
+### 로그·임시 파일 ###
+*.log
+logs/
+*.tmp
+*.swp
+
+### OS ###
+.DS_Store
+Thumbs.db
+desktop.ini
+
+### Claude Code 개인 설정 ###
+.claude/settings.local.json
+
+### 프론트엔드 (나중에 Next.js 추가 시) ###
+node_modules/
+.next/

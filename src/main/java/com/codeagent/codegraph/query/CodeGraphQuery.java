@@ -56,6 +56,27 @@ public class CodeGraphQuery {
                 """, (rs, i) -> sink(rs), projectId);
     }
 
+    /** 이름 일부로 노드를 찾는다 (대소문자 무시). kind가 null이면 모든 종류 */
+    public List<CodeNodeView> findNodes(Long projectId, String nameContains, String kind, int limit) {
+        return jdbcTemplate.query("""
+                select id, kind, qualified_name, file_path, start_line from code_node
+                where project_id = ? and qualified_name ilike ? and (?::text is null or kind = ?)
+                order by length(qualified_name), qualified_name
+                limit ?
+                """, (rs, i) -> codeNode(rs),
+                projectId, "%" + escapeLike(nameContains) + "%", kind, kind, limit);
+    }
+
+    public java.util.Optional<CodeNodeView> node(Long projectId, Long nodeId) {
+        return jdbcTemplate.query("""
+                select id, kind, qualified_name, file_path, start_line from code_node where project_id = ? and id = ?
+                """, (rs, i) -> codeNode(rs), projectId, nodeId).stream().findFirst();
+    }
+
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
     /** 이 메서드를 호출하는 메서드 (상위 타입 메서드를 통한 호출 포함) */
     public List<CodeNodeView> callers(Long nodeId) {
         return jdbcTemplate.query("""
@@ -66,12 +87,12 @@ public class CodeGraphQuery {
                 """, (rs, i) -> codeNode(rs), nodeId);
     }
 
-    /** 이 메서드가 호출하는 메서드·위험 지점 (구현 메서드 포함) */
+    /** 이 메서드(진입점)가 호출하는 메서드·위험 지점 (구현 메서드 포함) */
     public List<CodeNodeView> callees(Long nodeId) {
         return jdbcTemplate.query("""
                 select n.id, n.kind, n.qualified_name, n.file_path, n.start_line
                 from code_edge e join code_node n on n.id = e.dst_id
-                where e.src_id = ? and e.kind in ('CALLS', 'OVERRIDDEN_BY')
+                where e.src_id = ? and e.kind in ('CALLS', 'OVERRIDDEN_BY', 'ROUTES_TO')
                 order by n.qualified_name
                 """, (rs, i) -> codeNode(rs), nodeId);
     }

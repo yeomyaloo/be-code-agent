@@ -1,6 +1,9 @@
 spring:
   application:
     name: code-agent
+  config:
+    # 개인 비밀 값(API 키, DB 비밀번호)은 git에 안 올라가는 application-local.yml 에 둔다
+    import: optional:classpath:application-local.yml
   threads:
     virtual:
       enabled: true
@@ -18,3 +21,22 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+codeagent:
+  llm:
+    # application-local.yml 또는 환경 변수 ANTHROPIC_API_KEY 로 채운다
+    api-key: ${ANTHROPIC_API_KEY:}
+    max-tokens: 16000
+    # 안전 분류기가 거절하면 서버가 다른 모델로 자동 재시도 (server-side fallback)
+    fallbacks: true
+    worker:
+      model: claude-sonnet-5-5
+      effort: medium
+    planner:
+      model: claude-opus-5-5
+      effort: high
+    verifier:
+      model: claude-opus-5-5
+      effort: high
+  agent:
+    max-steps: 40
