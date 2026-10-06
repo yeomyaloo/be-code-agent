@@ -6,15 +6,18 @@ import com.codeagent.analysisgraph.domain.AnalysisEdgeRepository;
 import com.codeagent.analysisgraph.domain.AnalysisNode;
 import com.codeagent.analysisgraph.domain.AnalysisNodeKind;
 import com.codeagent.analysisgraph.domain.AnalysisNodeRepository;
+import com.codeagent.analysisgraph.domain.AnalysisNodeStatus;
 import com.codeagent.analysisgraph.domain.Anchor;
 import com.codeagent.analysisgraph.domain.AnchorRepository;
 import com.codeagent.analysisgraph.domain.AnchorRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
@@ -24,6 +27,9 @@ import java.util.NoSuchElementException;
 @Service
 @RequiredArgsConstructor
 public class AnalysisGraphService {
+
+    private static final TypeReference<Map<String, Object>> JSON_OBJECT = new TypeReference<>() {
+    };
 
     private final AnalysisNodeRepository nodeRepository;
     private final AnalysisEdgeRepository edgeRepository;
@@ -61,6 +67,31 @@ public class AnalysisGraphService {
         if (!node.getJobId().equals(jobId) || node.getKind() != kind) {
             throw new NoSuchElementException("이 작업의 " + kind + " 노드가 아님: " + nodeId);
         }
+    }
+
+    /**
+     * 발견에 검증 결과를 기록한다. props.verification 에 판정 내용을 넣고 상태를 바꾼다.
+     *
+     * @return 이미 판정된 발견이면 false
+     */
+    @Transactional
+    public boolean recordVerdict(Long jobId, Long findingId, AnalysisNodeStatus status, Map<String, Object> verification) {
+        AnalysisNode finding = nodeRepository.findById(findingId)
+                .orElseThrow(() -> new NoSuchElementException("분석 노드 없음: " + findingId));
+        if (!finding.getJobId().equals(jobId) || finding.getKind() != AnalysisNodeKind.FINDING) {
+            throw new NoSuchElementException("이 작업의 FINDING 노드가 아님: " + findingId);
+        }
+        if (finding.getStatus() != AnalysisNodeStatus.OPEN) {
+            return false;
+        }
+        Map<String, Object> props = new LinkedHashMap<>(jsonMapper.readValue(finding.getProps(), JSON_OBJECT));
+        props.put("verification", verification);
+        finding.applyVerdict(status, jsonMapper.writeValueAsString(props));
+        return true;
+    }
+
+    public Map<String, Object> props(AnalysisNode node) {
+        return jsonMapper.readValue(node.getProps(), JSON_OBJECT);
     }
 
     @Transactional

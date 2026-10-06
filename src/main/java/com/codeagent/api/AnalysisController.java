@@ -83,10 +83,22 @@ public class AnalysisController {
         return new AnalysisView(JobView.from(job), nodes);
     }
 
+    /** 검증 대기(OPEN) 발견을 다시 검증한다. 끝난 작업에만 쓸 수 있다 */
+    @PostMapping("/api/analyses/{jobId}/verify")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public JobView verify(@PathVariable Long jobId) {
+        analysisService.verify(jobId);
+        return JobView.from(jobRepository.findById(jobId).orElseThrow());
+    }
+
+    /**
+     * @param status OPEN(검증 대기) / CONFIRMED / REJECTED / UNCERTAIN, 생략하면 전체
+     */
     @GetMapping("/api/analyses/{jobId}/findings")
-    public List<NodeView> findings(@PathVariable Long jobId) {
+    public List<NodeView> findings(@PathVariable Long jobId, @RequestParam(required = false) String status) {
         return nodeRepository.findByJobIdOrderById(jobId).stream()
                 .filter(n -> n.getKind().name().equals("FINDING"))
+                .filter(n -> status == null || n.getStatus().name().equalsIgnoreCase(status))
                 .map(this::nodeView)
                 .toList();
     }

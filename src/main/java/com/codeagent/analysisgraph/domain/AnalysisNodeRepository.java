@@ -32,4 +32,6 @@ public interface AnalysisNodeRepository extends JpaRepository<AnalysisNode, Long
     Optional<AnalysisNode> claimNextIntention(Long jobId, String workerId);
 
     List<AnalysisNode> findByJobIdOrderById(Long jobId);
+
+    List<AnalysisNode> findByJobIdAndKindAndStatusOrderById(Long jobId, AnalysisNodeKind kind, AnalysisNodeStatus status);
 }

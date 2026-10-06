@@ -48,6 +48,13 @@ public class AnalysisJob {
         this.startedAt = OffsetDateTime.now();
     }
 
+    /** 끝난 작업을 다시 진행 상태로 (검증 재실행 등) */
+    public void resume() {
+        this.status = JobStatus.RUNNING;
+        this.error = null;
+        this.finishedAt = null;
+    }
+
     public void finish(JobStatus status, String error) {
         this.status = status;
         this.error = error;

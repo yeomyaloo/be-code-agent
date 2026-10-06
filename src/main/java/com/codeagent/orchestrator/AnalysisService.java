@@ -6,6 +6,7 @@ import com.codeagent.agent.AgentLoop.AgentRun;
 import com.codeagent.agent.AgentLoop.Outcome;
 import com.codeagent.agent.WorkerPrompts;
 import com.codeagent.agent.tool.AgentTool;
+import com.codeagent.agent.tool.SubmitVerdictTool;
 import com.codeagent.agent.tool.ToolContext;
 import com.codeagent.analysisgraph.AnalysisGraphService;
 import com.codeagent.analysisgraph.domain.AnalysisEdgeKind;
@@ -38,8 +39,8 @@ import java.util.concurrent.Executors;
 
 /**
  * 분석 작업 하나를 진행한다.
- * 지금은 코드 그래프의 진입점 → 위험 지점 경로마다 할 일을 만들고 실행 담당 하나가 차례로 처리한다.
- * (LLM 계획 담당, 병렬 실행 담당, 검증 담당은 다음 단계)
+ * 코드 그래프의 진입점 → 위험 지점 경로마다 할 일을 만들고 실행 담당 하나가 차례로 처리한 뒤,
+ * 검증 담당이 발견을 하나씩 다시 확인한다. (LLM 계획 담당, 병렬 실행 담당은 다음 단계)
  */
 @Slf4j
 @Service
@@ -54,13 +55,15 @@ public class AnalysisService {
     private final AnalysisGraphService analysisGraph;
     private final CodeGraphQuery codeGraphQuery;
     private final AgentLoop agentLoop;
+    private final VerificationService verificationService;
     private final List<AgentTool> tools;
     private final AgentProperties agentProperties;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     public AnalysisService(ProjectRepository projectRepository, AnalysisJobRepository jobRepository,
                            AnalysisNodeRepository nodeRepository, AnalysisGraphService analysisGraph,
-                           CodeGraphQuery codeGraphQuery, AgentLoop agentLoop, List<AgentTool> tools,
+                           CodeGraphQuery codeGraphQuery, AgentLoop agentLoop,
+                           VerificationService verificationService, List<AgentTool> allTools,
                            AgentProperties agentProperties) {
         this.projectRepository = projectRepository;
         this.jobRepository = jobRepository;
@@ -68,7 +71,9 @@ public class AnalysisService {
         this.analysisGraph = analysisGraph;
         this.codeGraphQuery = codeGraphQuery;
         this.agentLoop = agentLoop;
-        this.tools = tools;
+        this.verificationService = verificationService;
+        // 판정 제출은 검증 담당 전용
+        this.tools = allTools.stream().filter(t -> !t.name().equals(SubmitVerdictTool.NAME)).toList();
         this.agentProperties = agentProperties;
     }
 
@@ -123,7 +128,7 @@ public class AnalysisService {
                 }
                 Optional<AnalysisNode> claimed = nodeRepository.claimNextIntention(jobId, WORKER_ID);
                 if (claimed.isEmpty()) {
-                    finish(jobId, JobStatus.DONE, null);
+                    runVerification(jobId, projectId, repoRoot);
                     return;
                 }
                 AnalysisNode intention = claimed.get();
@@ -143,6 +148,37 @@ public class AnalysisService {
         } catch (RuntimeException e) {
             log.error("분석 작업 #{} 실패", jobId, e);
             finish(jobId, JobStatus.FAILED, e.getMessage());
+        }
+    }
+
+    /** 끝난 작업의 검증 대기 발견을 다시 검증한다 */
+    public AnalysisJob verify(Long jobId) {
+        AnalysisJob job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new NoSuchElementException("분석 작업 없음: " + jobId));
+        if (job.getStatus() == JobStatus.RUNNING) {
+            throw new IllegalArgumentException("분석 작업이 아직 진행 중임: " + jobId);
+        }
+        Project project = projectRepository.findById(job.getProject().getId()).orElseThrow();
+        job.resume();
+        jobRepository.save(job);
+        executor.submit(() -> {
+            try {
+                runVerification(jobId, project.getId(), Path.of(project.getRepoPath()));
+            } catch (RuntimeException e) {
+                log.error("분석 작업 #{} 검증 실패", jobId, e);
+                finish(jobId, JobStatus.FAILED, e.getMessage());
+            }
+        });
+        return job;
+    }
+
+    private void runVerification(Long jobId, Long projectId, Path repoRoot) {
+        VerificationService.VerificationSummary summary =
+                verificationService.verifyOpenFindings(jobId, projectId, repoRoot);
+        if (summary.budgetExhausted()) {
+            finish(jobId, JobStatus.STOPPED, "토큰 예산 소진 (검증 중)");
+        } else {
+            finish(jobId, JobStatus.DONE, null);
         }
     }
 
