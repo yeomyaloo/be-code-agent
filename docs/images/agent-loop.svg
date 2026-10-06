@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" width="1000" height="420" font-family="Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+    <style>
+      .title { font-size: 22px; font-weight: 700; fill: #1f2328; }
+      .sub { font-size: 14px; fill: #57606a; }
+      .h { font-size: 15px; font-weight: 700; fill: #1f2328; }
+      .t { font-size: 13px; fill: #1f2328; }
+      .m { font-size: 12px; fill: #57606a; }
+      .code { font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace; font-size: 12px; fill: #1f2328; }
+      .edge { stroke: #57606a; stroke-width: 1.6; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="1000" height="420" fill="#ffffff"/>
+
+  <text x="30" y="38" class="title">에이전트 반복 흐름 (AgentLoop)</text>
+  <text x="30" y="62" class="sub">Worker와 Verifier는 같은 반복문을 쓰고, 프롬프트와 도구만 다르다</text>
+
+  <!-- 루프 되돌아가는 선 -->
+  <path d="M700,125 L315,125 L315,188" class="edge" marker-end="url(#arrow)"/>
+  <text x="508" y="116" text-anchor="middle" class="m">도구 결과를 대화에 추가하고 다시 호출</text>
+
+  <!-- 시작 -->
+  <rect x="30" y="190" width="160" height="76" rx="10" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.4"/>
+  <text x="110" y="220" text-anchor="middle" class="h">할 일 받기</text>
+  <text x="110" y="243" text-anchor="middle" class="m">프롬프트 + 도구 목록</text>
+  <line x1="190" y1="228" x2="228" y2="228" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- Claude 호출 -->
+  <rect x="230" y="190" width="170" height="76" rx="10" fill="#fff4e5" stroke="#c2410c" stroke-width="1.6"/>
+  <text x="315" y="220" text-anchor="middle" class="h">Claude 호출</text>
+  <text x="315" y="243" text-anchor="middle" class="code">messages().create()</text>
+  <line x1="400" y1="228" x2="448" y2="228" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- 응답 판단 -->
+  <rect x="450" y="190" width="160" height="76" rx="10" fill="#ffffff" stroke="#1f2328" stroke-width="1.4"/>
+  <text x="530" y="220" text-anchor="middle" class="h">응답 종류?</text>
+  <text x="530" y="243" text-anchor="middle" class="code">stop_reason</text>
+
+  <!-- 도구 실행 -->
+  <path d="M610,210 L650,210 L650,152 L698,152" class="edge" marker-end="url(#arrow)"/>
+  <text x="644" y="172" text-anchor="end" class="code">tool_use</text>
+  <rect x="700" y="100" width="270" height="80" rx="10" fill="#fbf7ff" stroke="#8250df" stroke-width="1.6"/>
+  <text x="835" y="132" text-anchor="middle" class="h">도구 실행 (백엔드)</text>
+  <text x="835" y="156" text-anchor="middle" class="code">read_file, grep_code, record_finding …</text>
+
+  <!-- 종료 -->
+  <path d="M610,246 L650,246 L650,302 L698,302" class="edge" marker-end="url(#arrow)"/>
+  <text x="644" y="290" text-anchor="end" class="code">end_turn</text>
+  <rect x="700" y="262" width="270" height="80" rx="10" fill="#eefbf1" stroke="#1a7f37" stroke-width="1.6"/>
+  <text x="835" y="294" text-anchor="middle" class="h">최종 판단 → 종료</text>
+  <text x="835" y="318" text-anchor="middle" class="m">"판정: 취약 / 취약하지 않음 / 판단 불가"</text>
+
+  <!-- 안전장치 -->
+  <rect x="30" y="300" width="610" height="94" rx="10" fill="#fff8f8" stroke="#cf222e" stroke-width="1.2" stroke-dasharray="6 4"/>
+  <text x="48" y="326" class="h">백엔드가 거는 안전장치</text>
+  <text x="48" y="350" class="t">최대 40단계 · 토큰 예산 · 잘린 응답이나 거절이면 중단</text>
+  <text x="48" y="372" class="t">저장소 밖 파일 접근 차단 · 모든 단계를 worker_trace에 기록</text>
+</svg>

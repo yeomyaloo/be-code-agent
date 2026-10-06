@@ -7,6 +7,8 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 
 > 현재 단계: **코드 그래프 생성·조회, Claude 연동 Worker 에이전트 루프, 발견 검증(Verifier)까지 구현됨.** 할 일은 코드 그래프의 진입점 → 위험 지점 경로에서 기계적으로 만들고 Worker 하나가 차례로 처리한 뒤, Verifier가 발견을 하나씩 다시 확인한다. LLM Planner, 병렬 Worker는 아직 구현 전이다. 자세한 내용은 [진행 상황](#진행-상황)을 참고.
 
+![be-code-agent 아키텍처](docs/images/architecture.svg)
+
 ---
 
 ## 목차
@@ -333,6 +335,8 @@ CodeGraphIndexer           노드 upsert(id 유지) → 사라진 노드 정리 
 ```
 
 ### 현재 에이전트 실행 흐름
+
+![에이전트 반복 흐름](docs/images/agent-loop.svg)
 
 ```
 POST /analyses

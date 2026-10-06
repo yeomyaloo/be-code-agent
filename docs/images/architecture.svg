@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 660" width="1020" height="660" font-family="Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+    <marker id="arrow-llm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/>
+    </marker>
+    <style>
+      .title { font-size: 22px; font-weight: 700; fill: #1f2328; }
+      .sub { font-size: 14px; fill: #57606a; }
+      .h { font-size: 15px; font-weight: 700; fill: #1f2328; }
+      .t { font-size: 13px; fill: #1f2328; }
+      .m { font-size: 12px; fill: #57606a; }
+      .code { font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace; font-size: 12px; fill: #1f2328; }
+      .edge { stroke: #57606a; stroke-width: 1.6; fill: none; }
+      .edge-llm { stroke: #c2410c; stroke-width: 1.8; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="1020" height="660" fill="#ffffff"/>
+
+  <text x="40" y="40" class="title">be-code-agent 아키텍처</text>
+  <text x="40" y="64" class="sub">LLM(Claude)은 판단만 하고, 실제 일은 백엔드가 한다</text>
+
+  <!-- 사용자 -->
+  <rect x="40" y="90" width="200" height="60" rx="10" fill="#ffffff" stroke="#1f2328" stroke-width="1.4"/>
+  <text x="140" y="116" text-anchor="middle" class="h">사용자</text>
+  <text x="140" y="137" text-anchor="middle" class="m">REST API 호출</text>
+  <line x1="140" y1="150" x2="140" y2="183" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- 백엔드 컨테이너 -->
+  <rect x="40" y="185" width="660" height="450" rx="14" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.4"/>
+  <text x="60" y="212" class="h">be-code-agent 백엔드 (Spring Boot)</text>
+  <text x="680" y="212" text-anchor="end" class="m">= 손발: 실행 · 기억 · 통제</text>
+
+  <!-- ① 코드 그래프 -->
+  <rect x="60" y="228" width="620" height="70" rx="10" fill="#eef6ff" stroke="#2f81f7" stroke-width="1.4"/>
+  <text x="78" y="254" class="h">① 코드 그래프 생성</text>
+  <rect x="222" y="240" width="96" height="20" rx="10" fill="#ffffff" stroke="#2f81f7"/>
+  <text x="270" y="254" text-anchor="middle" class="m">LLM 사용 안 함</text>
+  <text x="78" y="282" class="t">JavaParser로 소스 파싱 → 진입점 · 위험 지점(34개 규칙, CWE) · 호출 경로</text>
+
+  <line x1="160" y1="298" x2="160" y2="326" class="edge" marker-end="url(#arrow)"/>
+  <text x="168" y="317" class="m">진입점 → 위험 지점 경로</text>
+
+  <!-- ② Planner -->
+  <rect x="60" y="328" width="190" height="100" rx="10" fill="#ffffff" stroke="#8c959f" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <text x="78" y="354" class="h">② Planner 자리</text>
+  <text x="78" y="375" class="code">AnalysisService</text>
+  <text x="78" y="396" class="t">경로마다 할 일 생성</text>
+  <text x="78" y="416" class="m">현재 규칙 기반 (LLM 아님)</text>
+
+  <!-- ③ Worker -->
+  <rect x="275" y="328" width="190" height="100" rx="10" fill="#ffffff" stroke="#8250df" stroke-width="1.6"/>
+  <text x="293" y="354" class="h">③ Worker</text>
+  <text x="293" y="375" class="code">AgentLoop</text>
+  <text x="293" y="396" class="t">+ Worker 프롬프트</text>
+  <text x="293" y="416" class="m">코드 조사 → 발견 기록</text>
+
+  <!-- ④ Verifier -->
+  <rect x="490" y="328" width="190" height="100" rx="10" fill="#ffffff" stroke="#8250df" stroke-width="1.6"/>
+  <text x="508" y="354" class="h">④ Verifier</text>
+  <text x="508" y="375" class="code">AgentLoop</text>
+  <text x="508" y="396" class="t">+ Verifier 프롬프트</text>
+  <text x="508" y="416" class="m">발견 재검증 → 확정 / 기각</text>
+
+  <line x1="250" y1="378" x2="273" y2="378" class="edge" marker-end="url(#arrow)"/>
+  <line x1="465" y1="378" x2="488" y2="378" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- 도구 -->
+  <line x1="370" y1="428" x2="370" y2="456" class="edge" marker-end="url(#arrow)"/>
+  <line x1="585" y1="428" x2="585" y2="456" class="edge" marker-end="url(#arrow)"/>
+  <rect x="60" y="458" width="620" height="88" rx="10" fill="#fbf7ff" stroke="#8250df" stroke-width="1.4"/>
+  <text x="78" y="483" class="h">도구 9개</text>
+  <text x="148" y="483" class="m">LLM이 골라서 요청하면 백엔드가 실행</text>
+  <text x="78" y="508" class="code">read_file · grep_code · find_code_nodes · get_callers · get_callees</text>
+  <text x="78" y="530" class="code">search_worker_traces · record_fact · record_finding · submit_verdict</text>
+
+  <!-- DB -->
+  <line x1="370" y1="546" x2="370" y2="562" class="edge" marker-end="url(#arrow)"/>
+  <rect x="60" y="564" width="620" height="56" rx="10" fill="#eefbf1" stroke="#1a7f37" stroke-width="1.4"/>
+  <text x="78" y="588" class="h">PostgreSQL</text>
+  <text x="78" y="608" class="t">코드 그래프  |  분석 그래프 (목표 · 할 일 · 사실 · 발견)  |  실행 기록</text>
+
+  <!-- Claude -->
+  <rect x="770" y="300" width="220" height="160" rx="14" fill="#fff4e5" stroke="#c2410c" stroke-width="1.6"/>
+  <text x="880" y="330" text-anchor="middle" class="h">Claude (Anthropic API)</text>
+  <text x="880" y="352" text-anchor="middle" class="m">= 두뇌: 판단만 담당</text>
+  <line x1="790" y1="366" x2="970" y2="366" stroke="#f0c9a8"/>
+  <text x="792" y="390" class="t">Worker</text>
+  <text x="968" y="390" text-anchor="end" class="t">Sonnet 5.5</text>
+  <text x="792" y="414" class="t">Verifier</text>
+  <text x="968" y="414" text-anchor="end" class="t">Opus 5.5</text>
+  <text x="792" y="438" class="t">Planner</text>
+  <text x="968" y="438" text-anchor="end" class="m">Opus 5.5 (예정)</text>
+
+  <!-- 요청 / 응답 -->
+  <path d="M680,352 L768,352" class="edge-llm" marker-end="url(#arrow-llm)"/>
+  <text x="724" y="344" text-anchor="middle" class="m">요청</text>
+  <path d="M768,404 L680,404" class="edge-llm" marker-end="url(#arrow-llm)"/>
+  <text x="724" y="396" text-anchor="middle" class="m">응답</text>
+
+  <text x="770" y="490" class="m">요청: 프롬프트 + 대화 기록 + 도구 목록</text>
+  <text x="770" y="510" class="m">응답: "이 도구 써줘" 또는 최종 판단</text>
+  <text x="770" y="540" class="m">호출 위치는 한 곳뿐</text>
+  <text x="770" y="558" class="code">AgentLoop.java</text>
+</svg>
