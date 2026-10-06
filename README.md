@@ -20,6 +20,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 - [시스템 기술 구조](#시스템-기술-구조)
 - [디렉터리 구조](#디렉터리-구조)
 - [참고](#참고)
+- [사용 기술](#사용-기술)
 - [면책 조항](#면책-조항)
 
 ---
@@ -289,9 +290,12 @@ be-code-agent/
 
 ## 참고
 
-- [ARTEX](https://github.com/Autumn-27/ARTEX): 이중 그래프, Planner/Worker, 연결점(anchor), Worker 기록 공유 구조를 참고함. ARTEX는 AGPL-3.0이며, 이 저장소는 ARTEX 코드를 포함하지 않는다.
-- [JavaParser](https://javaparser.org/)
-- [CWE](https://cwe.mitre.org/)
+- [ARTEX](https://github.com/Autumn-27/ARTEX): 이중 그래프, Planner/Worker, 연결점(anchor), Worker 기록 공유 구조 등 아키텍처 아이디어만 참고함. ARTEX는 AGPL-3.0이며, 이 저장소는 ARTEX 코드를 포함하지 않는다.
+
+## 사용 기술
+
+- [JavaParser](https://javaparser.org/) (Apache-2.0 / LGPL-3.0 중 선택): Java 소스 파싱, 타입 해석
+- [CWE](https://cwe.mitre.org/) (MITRE): 위험 지점과 발견에 붙이는 취약점 분류 번호 (예: CWE-89 SQL 인젝션)
 
 ---
 
