@@ -21,6 +21,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 - [디렉터리 구조](#디렉터리-구조)
 - [참고](#참고)
 - [사용 기술](#사용-기술)
+- [라이선스](#라이선스)
 - [면책 조항](#면책-조항)
 
 ---
@@ -441,6 +442,12 @@ be-code-agent/
 - [JavaParser](https://javaparser.org/) (Apache-2.0 / LGPL-3.0 중 선택): Java 소스 파싱, 타입 해석
 - [Anthropic Java SDK](https://github.com/anthropics/anthropic-sdk-java) (MIT): Claude API 호출
 - [CWE](https://cwe.mitre.org/) (MITRE): 위험 지점과 발견에 붙이는 취약점 분류 번호 (예: CWE-89 SQL 인젝션)
+
+---
+
+## 라이선스
+
+[Apache License 2.0](LICENSE)
 
 ---
 
