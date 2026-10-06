@@ -8,6 +8,8 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.time.OffsetDateTime;
+
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -33,6 +35,12 @@ public class CodeNode {
     @JdbcTypeCode(SqlTypes.JSON)
     private String props;
 
+    /** 마지막으로 파싱 결과에 나타난 시각 */
+    private OffsetDateTime indexedAt;
+
+    /** 파싱 결과에서 사라졌지만 분석 그래프가 참조하고 있어 남겨 둔 노드면 그 시각 */
+    private OffsetDateTime removedAt;
+
     @Builder
     private CodeNode(Long projectId, CodeNodeKind kind, String qualifiedName,
                      String filePath, Integer startLine, Integer endLine, String props) {
@@ -43,5 +51,6 @@ public class CodeNode {
         this.startLine = startLine;
         this.endLine = endLine;
         this.props = props == null ? "{}" : props;
+        this.indexedAt = OffsetDateTime.now();
     }
 }

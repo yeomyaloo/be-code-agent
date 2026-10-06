@@ -200,7 +200,14 @@ curl -X POST localhost:8080/api/projects -H "Content-Type: application/json" \
 curl -X POST localhost:8080/api/projects/1/index
 ```
 
-다시 호출하면 기존 그래프를 지우고 새로 만든다. 응답에 파일·클래스·메서드·진입점·위험 지점 개수, 호출 관계 수, 타입을 알 수 없었던 호출 수, 파싱 오류 목록, 걸린 시간이 담긴다.
+코드가 바뀌었으면 다시 호출하면 된다. 노드는 `(종류, 정규화된 이름)`이 같으면 id를 유지하므로, 이미 돌린 분석 결과(연결점)가 그대로 이어진다.
+
+- 파싱 결과에서 사라진 노드는 지운다. 단, 분석 그래프가 참조하는 노드는 `removed_at`만 표시하고 남긴다 (조회 API에서는 빠짐).
+- 사라졌던 노드가 다시 나타나면 같은 id로 되살린다.
+- 호출 관계(연결선)는 매번 새로 만든다.
+- 위험 지점 노드 이름에는 줄 번호가 들어가서, 위쪽 코드가 바뀌어 줄이 밀리면 새 노드가 된다.
+
+응답에 파일·클래스·메서드·진입점·위험 지점 개수, 호출 관계 수, 타입을 알 수 없었던 호출 수, 지운 노드 수(`removedNodes`), 표시만 하고 남긴 노드 수(`retainedNodes`), 파싱 오류 목록, 걸린 시간이 담긴다.
 
 ### 3. 조회
 
@@ -243,6 +250,7 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 - `CodeGraphBuilderTest`는 DB 없이 돈다. 일부러 취약하게 만든 예제 앱(`src/test/resources/fixtures/vulnerable-app`)을 파싱해서 진입점·위험 지점·상속 연결·도달 경로를 검증한다.
 - `FileToolsTest`는 DB 없이 돈다. `read_file`·`grep_code` 도구의 범위 읽기, 저장소 밖 경로 차단, 입력 오류 처리를 검증한다.
 - `CodeAgentApplicationTests`는 스프링 컨텍스트를 띄우므로 PostgreSQL이 떠 있어야 한다.
+- `CodeGraphReindexTest`는 예제 앱을 임시 폴더에 복사해서 파일을 고치고 지우며 다시 만들기를 검증한다 (노드 id 유지, 연결점 보존, 사라진 노드 정리). PostgreSQL이 필요하다.
 - `AnalysisFlowTest`는 실제 Claude 대신 가짜 `AgentLoop`가 도구를 직접 호출해서 할 일 생성 → 배분 → 사실·발견 기록 → 작업 종료 흐름을 검증한다. API 키는 필요 없지만 PostgreSQL이 필요하고, **로컬 `codeagent` DB에 테스트 데이터(프로젝트·분석 작업)를 남긴다.**
 - **Worker 도구 추가**: `agent/tool/AgentTool`을 구현한 `@Component`를 만들면 Worker에 자동으로 등록된다. 잘못된 입력은 `ToolInputException`을 던지면 Claude에게 오류로 전달되어 다시 시도하게 된다.
 - **위험 지점 규칙 추가**: `codegraph/ingest/SinkRules.java`의 `RULES`에 `rule(타입 FQN, 분류, CWE, 메서드...)`를 추가한다. 생성자는 메서드 이름 `<init>`으로 적는다.
@@ -313,7 +321,7 @@ CodeGraphBuilder.build()
   ▼
 CodeGraphDraft             DB 저장 전 메모리 그래프 (중복 제거)
   ▼
-CodeGraphIndexer           기존 그래프 삭제 후 JdbcTemplate 배치 insert (500건 단위)
+CodeGraphIndexer           노드 upsert(id 유지) → 사라진 노드 정리 → 연결선 재생성 (JdbcTemplate 배치, 500건 단위)
 ```
 
 ### 현재 에이전트 실행 흐름
@@ -378,7 +386,7 @@ be-code-agent/
 │   │   │   ├── SinkRules.java, SinkRule.java        위험 지점 규칙
 │   │   │   ├── CodeGraphBuilder.java                그래프 조립
 │   │   │   ├── CodeGraphDraft.java                  저장 전 메모리 그래프
-│   │   │   └── CodeGraphIndexer.java                DB 저장 (재생성)
+│   │   │   └── CodeGraphIndexer.java                DB 저장 (노드 id 유지하며 갱신)
 │   │   └── query/CodeGraphQuery.java                조회, 재귀 CTE 경로 탐색
 │   ├── analysisgraph/
 │   │   ├── domain/                                  AnalysisNode/Edge, Anchor, WorkerTrace
@@ -396,9 +404,11 @@ be-code-agent/
 │   ├── application-local.yml.example                개인 비밀 값 파일 견본
 │   └── db/migration/
 │       ├── V1__init.sql                             전체 스키마
-│       └── V2__job_error_and_usage.sql              분석 작업 오류·토큰 사용량 칸
+│       ├── V2__job_error_and_usage.sql              분석 작업 오류·토큰 사용량 칸
+│       └── V3__code_node_reindex.sql                코드 노드 indexed_at / removed_at
 └── src/test/
     ├── java/.../CodeGraphBuilderTest.java           코드 그래프 테스트 (DB 불필요)
+    ├── java/.../CodeGraphReindexTest.java           코드 그래프 재생성 테스트 (DB 필요)
     ├── java/.../FileToolsTest.java                  파일 도구 테스트 (DB 불필요)
     ├── java/.../AnalysisFlowTest.java               분석 흐름 통합 테스트 (DB 필요, API 키 불필요)
     └── resources/fixtures/vulnerable-app/           테스트용 취약 예제 앱

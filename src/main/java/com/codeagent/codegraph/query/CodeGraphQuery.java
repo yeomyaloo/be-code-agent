@@ -42,7 +42,7 @@ public class CodeGraphQuery {
         return jdbcTemplate.query("""
                 select id, props ->> 'httpMethod' as http_method, props ->> 'path' as path, props ->> 'handler' as handler,
                        file_path, start_line
-                from code_node where project_id = ? and kind = 'ENTRY_POINT'
+                from code_node where project_id = ? and kind = 'ENTRY_POINT' and removed_at is null
                 order by props ->> 'path', props ->> 'httpMethod'
                 """, (rs, i) -> entryPoint(rs), projectId);
     }
@@ -51,7 +51,7 @@ public class CodeGraphQuery {
         return jdbcTemplate.query("""
                 select id, props ->> 'category' as category, props ->> 'cwe' as cwe, props ->> 'api' as api,
                        props ->> 'method' as method, props ->> 'snippet' as snippet, file_path, start_line
-                from code_node where project_id = ? and kind = 'SINK'
+                from code_node where project_id = ? and kind = 'SINK' and removed_at is null
                 order by category, file_path, start_line
                 """, (rs, i) -> sink(rs), projectId);
     }
@@ -60,7 +60,7 @@ public class CodeGraphQuery {
     public List<CodeNodeView> findNodes(Long projectId, String nameContains, String kind, int limit) {
         return jdbcTemplate.query("""
                 select id, kind, qualified_name, file_path, start_line from code_node
-                where project_id = ? and qualified_name ilike ? and (?::text is null or kind = ?)
+                where project_id = ? and removed_at is null and qualified_name ilike ? and (?::text is null or kind = ?)
                 order by length(qualified_name), qualified_name
                 limit ?
                 """, (rs, i) -> codeNode(rs),
@@ -102,7 +102,7 @@ public class CodeGraphQuery {
         List<Long[]> paths = jdbcTemplate.query("""
                 with recursive walk (node_id, path, depth) as (
                     select id, array[id], 0
-                    from code_node where project_id = ? and kind = 'ENTRY_POINT'
+                    from code_node where project_id = ? and kind = 'ENTRY_POINT' and removed_at is null
                     union all
                     select e.dst_id, w.path || e.dst_id, w.depth + 1
                     from walk w
