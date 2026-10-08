@@ -82,7 +82,14 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
   - 판정: `CONFIRMED`(공격 가능) / `REJECTED`(오탐) / `UNCERTAIN`(근거 부족). 판정 근거·확인한 방어 장치·재평가한 심각도는 발견의 `props.verification`에 저장된다.
   - Verifier가 판정을 제출하지 못하고 끝나면(단계·예산 초과, 오류) `UNCERTAIN`으로 남긴다.
 - **Worker 병렬 실행**: 분석 작업 하나에 Worker 여러 개(`codeagent.agent.workers`, 기본 3)가 동시에 돈다. 할 일은 `SELECT ... FOR UPDATE SKIP LOCKED`로 가져가서 같은 할 일을 두 번 처리하지 않고, 토큰 사용량은 DB에서 원자적으로 더해 서로 덮어쓰지 않는다. 한 Worker가 첫 호출부터 실패하면(인증 오류 등) 나머지 Worker도 멈춘다.
-- **예정**: LLM Planner가 아직 검사하지 않은 경로만 골라 할 일 배포, SARIF / HTML 보고서
+- **예정**: LLM Planner가 아직 검사하지 않은 경로만 골라 할 일 배포
+
+### 보고서와 사람 검토 (구현됨)
+
+- **SARIF 2.1.0 보고서**: GitHub 코드 스캐닝 등 정적 분석 도구가 읽는 표준 형식. CWE별 규칙, 근거 코드 위치(첫 번째는 주 위치, 나머지는 관련 위치), 심각도 점수(`security-severity`), 검증 판정, 분석한 커밋(`versionControlProvenance`)이 들어간다.
+- **HTML 보고서**: 브라우저로 바로 여는 한 파일짜리 보고서. 심각도별 개수, 요약 표, 발견마다 진입점·위험 지점·공격 예시·근거 코드·검증 근거·사람 검토 결과를 보여준다. LLM이 쓴 글과 코드는 모두 이스케이프하고, `Content-Security-Policy`로 스크립트 실행을 막는다.
+- **정렬과 제외**: 심각도(검증 담당이 다시 매긴 값 우선) → 판정(확정 → 검증 대기 → 판단 불가) 순. 오탐(`REJECTED`, 사람이 `FALSE_POSITIVE`로 표시)은 기본으로 빼고 개수만 표시한다 (`includeDismissed=true`면 포함).
+- **사람 검토**: 발견마다 `ACCEPTED`(인정) / `FALSE_POSITIVE`(오탐) / `FIXED`(조치 완료) / `WONT_FIX`(위험 수용)와 의견을 남긴다. 검증 담당의 판정은 그대로 두고 `props.review`에 따로 기록한다. 검증 담당과 동시에 기록해도 덮어쓰지 않도록 행을 잠근다.
 
 ---
 
@@ -99,7 +106,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 5-1 | Worker 병렬 실행 (`workers`, 기본 3) | ✅ 완료 |
 | 5-2 | LLM Planner | ⬜ 예정 |
 | 6 | 발견 검증(Verifier, 오탐 제거) | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
-| 7 | 보고서 (SARIF, HTML) | ⬜ 예정 |
+| 7 | 보고서 (SARIF 2.1.0, HTML), 사람 검토 API | ✅ 완료 |
 | 8 | 웹 UI, 실시간 진행 상황(SSE), 사람 승인 단계 | ⬜ 예정 |
 
 ---
@@ -283,6 +290,9 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 | `GET /api/analyses/{jobId}` | 작업 상태(`RUNNING` / `DONE` / `STOPPED` / `FAILED`), 토큰 사용량, 오류, 분석 그래프 노드 전체 |
 | `GET /api/analyses/{jobId}/findings?status=` | 발견 목록 (CWE, 심각도, 확신도, 근거 코드 위치, 검증 결과). `status`로 거르기: `OPEN`(검증 대기) / `CONFIRMED` / `REJECTED` / `UNCERTAIN` |
 | `POST /api/analyses/{jobId}/verify` | 검증 대기 발견을 다시 검증 (끝난 작업만, 진행 중이면 400) |
+| `POST /api/analyses/{jobId}/findings/{findingId}/review` | 사람 검토 기록. `{"decision":"FALSE_POSITIVE","comment":"테스트 코드"}` (`ACCEPTED` / `FALSE_POSITIVE` / `FIXED` / `WONT_FIX`) |
+| `GET /api/analyses/{jobId}/report.sarif?includeDismissed=` | SARIF 2.1.0 보고서 파일 |
+| `GET /api/analyses/{jobId}/report.html?includeDismissed=` | HTML 보고서 (브라우저로 열기) |
 | `GET /api/analyses/{jobId}/traces?intentionId=` | 분석 기록 (Claude 응답, 도구 호출·결과). Worker 기록은 할 일 id, Verifier 기록은 발견 id로 거른다 |
 
 할 일마다 "할 일 #N 결론" FACT 노드에 Worker의 최종 판정과 사용 토큰이 남는다. 확정된 취약점만 보려면 `findings?status=CONFIRMED`.
@@ -461,7 +471,8 @@ be-code-agent/
 │   ├── orchestrator/
 │   │   ├── AnalysisService.java                     분석 작업 생성, 할 일 배분, Worker 실행, 검증 단계 시작
 │   │   └── VerificationService.java                 검증 대기 발견마다 Verifier 실행
-│   ├── api/                                         REST 컨트롤러 (프로젝트, 코드 그래프, 분석)
+│   ├── report/                                      보고서: ReportService(발견 모으기), SarifWriter, HtmlReportWriter
+│   ├── api/                                         REST 컨트롤러 (프로젝트, 코드 그래프, 분석, 보고서)
 │   └── common/GlobalExceptionHandler.java           404 / 400 응답 변환
 ├── src/main/resources/
 │   ├── application.yml                              공통 설정 (비밀 값은 자리만)
@@ -478,6 +489,7 @@ be-code-agent/
     ├── java/.../AnalysisFlowTest.java               분석 흐름 통합 테스트 (DB 필요, API 키 불필요)
     ├── java/.../GitUrlPolicyTest.java               Git 주소 검사 테스트 (DB·네트워크 불필요)
     ├── java/.../GitClonerTest.java                  로컬 원격 저장소로 클론 테스트 (DB·네트워크 불필요)
+    ├── java/.../ReportTest.java                     SARIF·HTML 보고서, 사람 검토 테스트 (DB 필요)
     └── resources/fixtures/vulnerable-app/           테스트용 취약 예제 앱
 ```
 

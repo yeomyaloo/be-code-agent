@@ -29,6 +29,12 @@
   <text x="140" y="137" text-anchor="middle" class="m">Git 주소 등록 · REST API</text>
   <line x1="140" y1="150" x2="140" y2="183" class="edge" marker-end="url(#arrow)"/>
 
+  <!-- ⑤ 보고서 -->
+  <rect x="290" y="90" width="250" height="60" rx="10" fill="#ffffff" stroke="#1a7f37" stroke-width="1.4"/>
+  <text x="415" y="116" text-anchor="middle" class="h">⑤ 보고서 · 사람 검토</text>
+  <text x="415" y="137" text-anchor="middle" class="m">SARIF 2.1.0 · HTML · 검토 API</text>
+  <line x1="415" y1="183" x2="415" y2="152" class="edge" marker-end="url(#arrow)"/>
+
   <!-- 백엔드 컨테이너 -->
   <rect x="40" y="185" width="660" height="450" rx="14" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.4"/>
   <text x="60" y="212" class="h">be-code-agent 백엔드 (Spring Boot)</text>

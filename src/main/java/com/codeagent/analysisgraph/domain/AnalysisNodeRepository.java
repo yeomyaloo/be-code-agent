@@ -1,6 +1,8 @@
 package com.codeagent.analysisgraph.domain;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,11 @@ public interface AnalysisNodeRepository extends JpaRepository<AnalysisNode, Long
             returning *
             """)
     Optional<AnalysisNode> claimNextIntention(Long jobId, String workerId);
+
+    /** props 를 읽어 고쳐 쓸 때 쓴다. 검증 담당과 사람 검토가 동시에 기록해도 서로 덮어쓰지 않게 행을 잠근다 */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select n from AnalysisNode n where n.id = :id")
+    Optional<AnalysisNode> findForUpdate(Long id);
 
     List<AnalysisNode> findByJobIdOrderById(Long jobId);
 

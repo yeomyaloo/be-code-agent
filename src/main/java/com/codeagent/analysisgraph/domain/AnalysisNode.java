@@ -58,6 +58,10 @@ public class AnalysisNode {
         this.status = AnalysisNodeStatus.FAILED;
     }
 
+    public void updateProps(String props) {
+        this.props = props;
+    }
+
     /** 검증 담당의 판정을 반영한다 (CONFIRMED / REJECTED / UNCERTAIN) */
     public void applyVerdict(AnalysisNodeStatus status, String props) {
         this.status = status;

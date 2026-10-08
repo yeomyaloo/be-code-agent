@@ -10,12 +10,14 @@ import com.codeagent.analysisgraph.domain.AnalysisNodeStatus;
 import com.codeagent.analysisgraph.domain.Anchor;
 import com.codeagent.analysisgraph.domain.AnchorRepository;
 import com.codeagent.analysisgraph.domain.AnchorRole;
+import com.codeagent.analysisgraph.domain.ReviewDecision;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -76,11 +78,7 @@ public class AnalysisGraphService {
      */
     @Transactional
     public boolean recordVerdict(Long jobId, Long findingId, AnalysisNodeStatus status, Map<String, Object> verification) {
-        AnalysisNode finding = nodeRepository.findById(findingId)
-                .orElseThrow(() -> new NoSuchElementException("분석 노드 없음: " + findingId));
-        if (!finding.getJobId().equals(jobId) || finding.getKind() != AnalysisNodeKind.FINDING) {
-            throw new NoSuchElementException("이 작업의 FINDING 노드가 아님: " + findingId);
-        }
+        AnalysisNode finding = lockFinding(jobId, findingId);
         if (finding.getStatus() != AnalysisNodeStatus.OPEN) {
             return false;
         }
@@ -88,6 +86,31 @@ public class AnalysisGraphService {
         props.put("verification", verification);
         finding.applyVerdict(status, jsonMapper.writeValueAsString(props));
         return true;
+    }
+
+    /**
+     * 사람이 발견을 검토한 결과를 props.review 에 기록한다. 검증 담당의 판정(status)은 그대로 둔다.
+     */
+    @Transactional
+    public AnalysisNode recordReview(Long jobId, Long findingId, ReviewDecision decision, String comment) {
+        AnalysisNode finding = lockFinding(jobId, findingId);
+        Map<String, Object> review = new LinkedHashMap<>();
+        review.put("decision", decision.name());
+        review.put("comment", comment);
+        review.put("reviewedAt", OffsetDateTime.now().toString());
+        Map<String, Object> props = new LinkedHashMap<>(jsonMapper.readValue(finding.getProps(), JSON_OBJECT));
+        props.put("review", review);
+        finding.updateProps(jsonMapper.writeValueAsString(props));
+        return finding;
+    }
+
+    private AnalysisNode lockFinding(Long jobId, Long findingId) {
+        AnalysisNode finding = nodeRepository.findForUpdate(findingId)
+                .orElseThrow(() -> new NoSuchElementException("분석 노드 없음: " + findingId));
+        if (!finding.getJobId().equals(jobId) || finding.getKind() != AnalysisNodeKind.FINDING) {
+            throw new NoSuchElementException("이 작업의 FINDING 노드가 아님: " + findingId);
+        }
+        return finding;
     }
 
     public Map<String, Object> props(AnalysisNode node) {
