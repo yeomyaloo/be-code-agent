@@ -29,24 +29,29 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.IntStream;
 
 /**
  * 분석 작업 하나를 진행한다.
- * 코드 그래프의 진입점 → 위험 지점 경로마다 할 일을 만들고 실행 담당 하나가 차례로 처리한 뒤,
- * 검증 담당이 발견을 하나씩 다시 확인한다. (LLM 계획 담당, 병렬 실행 담당은 다음 단계)
+ * 코드 그래프의 진입점 → 위험 지점 경로마다 할 일을 만들고 실행 담당 여러 개가 나눠 처리한 뒤,
+ * 검증 담당이 발견을 하나씩 다시 확인한다.
  */
 @Slf4j
 @Service
 public class AnalysisService {
 
-    private static final String WORKER_ID = "worker-1";
     private static final int PATH_DEPTH = 12;
 
     private final ProjectRepository projectRepository;
@@ -114,40 +119,75 @@ public class AnalysisService {
 
         Long jobId = job.getId();
         Path repoRoot = Path.of(project.getRepoPath());
-        executor.submit(() -> runWorker(jobId, projectId, repoRoot));
+        executor.submit(() -> runJob(jobId, projectId, repoRoot));
         return job;
     }
 
-    private void runWorker(Long jobId, Long projectId, Path repoRoot) {
+    /** 실행 담당이 멈춘 이유 */
+    private enum WorkerExit { DRAINED, BUDGET_EXHAUSTED, FAILED }
+
+    /** 실행 담당 여러 개를 동시에 돌리고, 모두 멈추면 검증 단계로 넘어간다 */
+    private void runJob(Long jobId, Long projectId, Path repoRoot) {
         try {
-            while (true) {
-                AnalysisJob job = jobRepository.findById(jobId).orElseThrow();
-                if (job.remainingTokens() == 0) {
-                    finish(jobId, JobStatus.STOPPED, "토큰 예산 소진");
-                    return;
-                }
-                Optional<AnalysisNode> claimed = nodeRepository.claimNextIntention(jobId, WORKER_ID);
-                if (claimed.isEmpty()) {
-                    runVerification(jobId, projectId, repoRoot);
-                    return;
-                }
-                AnalysisNode intention = claimed.get();
-                log.info("할 일 #{} 시작: {}", intention.getId(), intention.getTitle());
-
-                ToolContext context = new ToolContext(projectId, repoRoot, jobId, intention.getId(), WORKER_ID);
-                AgentRun run = agentLoop.run(new AgentRequest(ModelTier.WORKER, WorkerPrompts.SYSTEM,
-                        intention.getBody(), tools, context, agentProperties.maxSteps(), job.remainingTokens()));
-                recordRun(jobId, intention, run);
-
-                if (run.outcome() == Outcome.FAILED && run.steps() == 0) {
-                    // 첫 호출부터 실패하면 (인증 오류 등) 다른 할 일도 실패할 것이므로 멈춘다
-                    finish(jobId, JobStatus.FAILED, run.error());
-                    return;
-                }
+            AtomicReference<String> failure = new AtomicReference<>();
+            List<Future<WorkerExit>> workers = IntStream.rangeClosed(1, agentProperties.workers())
+                    .mapToObj(i -> executor.submit(() -> runWorker(jobId, projectId, repoRoot, "worker-" + i, failure)))
+                    .toList();
+            List<WorkerExit> exits = new ArrayList<>();
+            for (Future<WorkerExit> worker : workers) {
+                exits.add(worker.get());
             }
-        } catch (RuntimeException e) {
+
+            if (exits.contains(WorkerExit.FAILED)) {
+                finish(jobId, JobStatus.FAILED, failure.get());
+            } else if (exits.contains(WorkerExit.BUDGET_EXHAUSTED)) {
+                finish(jobId, JobStatus.STOPPED, "토큰 예산 소진");
+            } else {
+                runVerification(jobId, projectId, repoRoot);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            finish(jobId, JobStatus.FAILED, "중단됨");
+        } catch (ExecutionException | RuntimeException e) {
             log.error("분석 작업 #{} 실패", jobId, e);
             finish(jobId, JobStatus.FAILED, e.getMessage());
+        }
+    }
+
+    /**
+     * 할 일을 하나씩 가져가 처리한다. 가져갈 할 일이 없거나, 예산이 바닥나거나, 다른 실행 담당이 치명적인 오류로 멈추면 끝낸다.
+     */
+    private WorkerExit runWorker(Long jobId, Long projectId, Path repoRoot, String workerId,
+                                 AtomicReference<String> failure) {
+        try {
+            while (failure.get() == null) {
+                AnalysisJob job = jobRepository.findById(jobId).orElseThrow();
+                if (job.remainingTokens() == 0) {
+                    return WorkerExit.BUDGET_EXHAUSTED;
+                }
+                Optional<AnalysisNode> claimed = nodeRepository.claimNextIntention(jobId, workerId);
+                if (claimed.isEmpty()) {
+                    return WorkerExit.DRAINED;
+                }
+                AnalysisNode intention = claimed.get();
+                log.info("[{}] 할 일 #{} 시작: {}", workerId, intention.getId(), intention.getTitle());
+
+                ToolContext context = new ToolContext(projectId, repoRoot, jobId, intention.getId(), workerId);
+                AgentRun run = agentLoop.run(new AgentRequest(ModelTier.WORKER, WorkerPrompts.SYSTEM,
+                        intention.getBody(), tools, context, agentProperties.maxSteps(), job.remainingTokens()));
+                recordRun(jobId, intention, run, workerId);
+
+                if (run.outcome() == Outcome.FAILED && run.steps() == 0) {
+                    // 첫 호출부터 실패하면 (인증 오류 등) 다른 할 일도 실패할 것이므로 모든 실행 담당을 멈춘다
+                    failure.compareAndSet(null, run.error() == null ? "LLM 호출 실패" : run.error());
+                    return WorkerExit.FAILED;
+                }
+            }
+            return WorkerExit.FAILED;
+        } catch (RuntimeException e) {
+            log.error("[{}] 분석 작업 #{} 실패", workerId, jobId, e);
+            failure.compareAndSet(null, e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            return WorkerExit.FAILED;
         }
     }
 
@@ -182,10 +222,8 @@ public class AnalysisService {
         }
     }
 
-    private void recordRun(Long jobId, AnalysisNode intention, AgentRun run) {
-        AnalysisJob job = jobRepository.findById(jobId).orElseThrow();
-        job.addUsage(run.inputTokens(), run.outputTokens());
-        jobRepository.save(job);
+    private void recordRun(Long jobId, AnalysisNode intention, AgentRun run, String workerId) {
+        jobRepository.addUsage(jobId, run.inputTokens(), run.outputTokens());
 
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("outcome", run.outcome().name());
@@ -194,6 +232,7 @@ public class AnalysisService {
         props.put("outputTokens", run.outputTokens());
         props.put("cacheReadTokens", run.cacheReadTokens());
         props.put("error", run.error());
+        props.put("workerId", workerId);
         AnalysisNode summary = analysisGraph.addNode(jobId, AnalysisNodeKind.FACT,
                 "할 일 #" + intention.getId() + " 결론", run.finalText(), props);
         analysisGraph.complete(summary.getId());
@@ -204,15 +243,12 @@ public class AnalysisService {
         } else {
             analysisGraph.fail(intention.getId());
         }
-        log.info("할 일 #{} 종료: {} ({}단계, 입력 {} / 출력 {} 토큰)", intention.getId(), run.outcome(),
+        log.info("[{}] 할 일 #{} 종료: {} ({}단계, 입력 {} / 출력 {} 토큰)", workerId, intention.getId(), run.outcome(),
                 run.steps(), run.inputTokens(), run.outputTokens());
     }
 
     private void finish(Long jobId, JobStatus status, String error) {
-        jobRepository.findById(jobId).ifPresent(job -> {
-            job.finish(status, error);
-            jobRepository.save(job);
-        });
+        jobRepository.finish(jobId, status, error, OffsetDateTime.now());
         log.info("분석 작업 #{} 종료: {} {}", jobId, status, error == null ? "" : error);
     }
 

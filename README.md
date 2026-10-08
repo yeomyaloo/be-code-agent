@@ -5,7 +5,7 @@
 be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그래프**를 만들고, 그 위에서 LLM 에이전트가 "사용자 입력이 위험한 API까지 도달하는가"를 추적해 취약점을 찾고 검증하는 것을 목표로 한다.
 아키텍처는 [ARTEX](https://github.com/Autumn-27/ARTEX)의 이중 그래프 + Planner/Worker 구조를 참고했고, 코드는 모두 새로 작성했다. ARTEX가 **살아있는 서버**를 탐색한다면, be-code-agent는 **소스코드**를 탐색한다.
 
-> 현재 단계: **코드 그래프 생성·조회, Claude 연동 Worker 에이전트 루프, 발견 검증(Verifier)까지 구현됨.** 할 일은 코드 그래프의 진입점 → 위험 지점 경로에서 기계적으로 만들고 Worker 하나가 차례로 처리한 뒤, Verifier가 발견을 하나씩 다시 확인한다. LLM Planner, 병렬 Worker는 아직 구현 전이다. 자세한 내용은 [진행 상황](#진행-상황)을 참고.
+> 현재 단계: **코드 그래프 생성·조회, Claude 연동 Worker 에이전트 루프, 발견 검증(Verifier)까지 구현됨.** 할 일은 코드 그래프의 진입점 → 위험 지점 경로에서 기계적으로 만들고 Worker 여러 개(기본 3)가 나눠 처리한 뒤, Verifier가 발견을 하나씩 다시 확인한다. LLM Planner는 아직 구현 전이다. 자세한 내용은 [진행 상황](#진행-상황)을 참고.
 
 ![be-code-agent 아키텍처](docs/images/architecture.svg)
 
@@ -81,7 +81,8 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
   - 도구: 읽기 전용 6개(`read_file`, `grep_code`, `find_code_nodes`, `get_callers`, `get_callees`, `search_worker_traces`) + `submit_verdict`
   - 판정: `CONFIRMED`(공격 가능) / `REJECTED`(오탐) / `UNCERTAIN`(근거 부족). 판정 근거·확인한 방어 장치·재평가한 심각도는 발견의 `props.verification`에 저장된다.
   - Verifier가 판정을 제출하지 못하고 끝나면(단계·예산 초과, 오류) `UNCERTAIN`으로 남긴다.
-- **예정**: LLM Planner가 아직 검사하지 않은 경로만 골라 할 일 배포, 여러 Worker 병렬 실행, SARIF / HTML 보고서
+- **Worker 병렬 실행**: 분석 작업 하나에 Worker 여러 개(`codeagent.agent.workers`, 기본 3)가 동시에 돈다. 할 일은 `SELECT ... FOR UPDATE SKIP LOCKED`로 가져가서 같은 할 일을 두 번 처리하지 않고, 토큰 사용량은 DB에서 원자적으로 더해 서로 덮어쓰지 않는다. 한 Worker가 첫 호출부터 실패하면(인증 오류 등) 나머지 Worker도 멈춘다.
+- **예정**: LLM Planner가 아직 검사하지 않은 경로만 골라 할 일 배포, SARIF / HTML 보고서
 
 ---
 
@@ -95,7 +96,8 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 3 | 코드 그래프 조회 API (진입점, 위험 지점, 호출 경로, 호출자/피호출자) | ✅ 완료 |
 | 4 | LLM 연동(Anthropic Java SDK), Worker 도구 8개, Worker 에이전트 루프 | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
 | 5 | 공유 할 일 목록(`SKIP LOCKED`)과 분석 작업 API | ✅ 완료 |
-| 5-1 | LLM Planner, Worker 병렬 실행 | ⬜ 예정 |
+| 5-1 | Worker 병렬 실행 (`workers`, 기본 3) | ✅ 완료 |
+| 5-2 | LLM Planner | ⬜ 예정 |
 | 6 | 발견 검증(Verifier, 오탐 제거) | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
 | 7 | 보고서 (SARIF, HTML) | ⬜ 예정 |
 | 8 | 웹 UI, 실시간 진행 상황(SSE), 사람 승인 단계 | ⬜ 예정 |
@@ -196,6 +198,7 @@ API 키·비밀번호 같은 비밀 값은 `application.yml`에 **자리만** �
 | `codeagent.llm.max-tokens` | `16000` | 응답 하나의 최대 출력 토큰 |
 | `codeagent.llm.fallbacks` | `true` | 모델이 안전 분류기로 요청을 거절하면 서버가 다른 모델로 자동 재시도 |
 | `codeagent.agent.max-steps` | `40` | 할 일 하나에 쓸 수 있는 최대 LLM 호출 횟수 |
+| `codeagent.agent.workers` | `3` | 분석 작업 하나에서 동시에 도는 Worker 수. API 요청 한도(분당 요청·토큰)에 맞춰 조절 |
 
 시스템 프롬프트(`agent/WorkerPrompts.java`, `agent/VerifierPrompts.java`)는 할 일마다 같아서 프롬프트 캐시가 걸려 있다.
 
@@ -381,16 +384,16 @@ POST /analyses
   │
   ▼
 AnalysisService.start()     진입점 → 위험 지점 경로마다 INTENTION 생성 (GOAL ─SPAWNS→ INTENTION, anchor 연결)
-  │                         가상 스레드에서 Worker 시작
+  │                         가상 스레드에서 Worker N개(기본 3) 동시 시작
   ▼
 claimNextIntention()        선행 할 일(DEPENDS_ON)이 끝난 OPEN 할 일 하나를 CLAIMED로 (SELECT ... FOR UPDATE SKIP LOCKED)
   ▼
 AgentLoop.run()             Claude 호출 → tool_use면 도구 실행 → tool_result 돌려줌 → 반복
-  │                         매 단계 worker_trace 기록, 토큰 사용량 누적
+  │                         매 단계 worker_trace 기록, 토큰 사용량은 DB에서 원자적으로 누적
   ▼
 결론 FACT 기록, INTENTION을 DONE / FAILED로 → 다음 할 일 (예산 소진 시 작업 STOPPED)
   │
-  ▼  할 일이 더 없으면
+  ▼  모든 Worker가 가져갈 할 일이 없어 멈추면
 VerificationService         검증 대기(OPEN) FINDING마다 Verifier 에이전트 실행 (Opus, 읽기 전용 도구 + submit_verdict)
   │                         → CONFIRMED / REJECTED / UNCERTAIN, 판정 근거는 props.verification
   ▼

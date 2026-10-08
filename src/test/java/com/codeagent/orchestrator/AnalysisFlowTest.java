@@ -26,6 +26,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -125,6 +129,36 @@ class AnalysisFlowTest {
         assertThat(waitUntilFinished(job.getId()).getStatus()).isEqualTo(JobStatus.DONE);
         assertThat(verifications.get()).isEqualTo(6);
         assertThatThrownBy(() -> analysisService.verify(-1L)).isInstanceOf(java.util.NoSuchElementException.class);
+    }
+
+    @Test
+    void 실행_담당_여러_개가_동시에_할_일을_처리한다() throws InterruptedException {
+        Project project = projectRepository.save(new Project("parallel-test", FIXTURE.toString(), "java"));
+        codeGraphIndexer.index(project.getId());
+
+        // 처음 세 번의 호출이 동시에 진행 중이어야 장벽을 넘는다. 병렬이 아니면 시간 초과로 작업이 실패한다
+        CyclicBarrier barrier = new CyclicBarrier(3);
+        AtomicInteger calls = new AtomicInteger();
+        Set<String> workerIds = ConcurrentHashMap.newKeySet();
+        when(agentLoop.run(any())).thenAnswer(invocation -> {
+            AgentRequest request = invocation.getArgument(0);
+            workerIds.add(request.context().workerId());
+            if (calls.incrementAndGet() <= 3) {
+                barrier.await(5, TimeUnit.SECONDS);
+            }
+            return new AgentRun(Outcome.COMPLETED, "판정: 취약하지 않음", 1, 10, 5, 0, null);
+        });
+
+        AnalysisJob job = analysisService.start(project.getId(), 6, 1_000_000);
+        AnalysisJob finished = waitUntilFinished(job.getId());
+
+        assertThat(finished.getStatus()).isEqualTo(JobStatus.DONE);
+        assertThat(workerIds).containsExactlyInAnyOrder("worker-1", "worker-2", "worker-3");
+        assertThat(calls.get()).isEqualTo(6);
+        assertThat(finished.getUsedTokens()).as("동시에 기록해도 사용량이 빠지지 않는다").isEqualTo(6 * 15);
+        assertThat(nodeRepository.findByJobIdOrderById(job.getId()))
+                .filteredOn(n -> n.getKind() == AnalysisNodeKind.INTENTION)
+                .allMatch(n -> n.getStatus() == AnalysisNodeStatus.DONE);
     }
 
     private static AgentRun verify(AgentRequest request, int round) {

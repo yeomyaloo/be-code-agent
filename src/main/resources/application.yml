@@ -40,6 +40,8 @@ codeagent:
       effort: high
   agent:
     max-steps: 40
+    # 분석 작업 하나에서 동시에 도는 Worker 수 (API 요청 한도에 맞춰 조절)
+    workers: 3
   workspace:
     # Git 주소로 등록한 저장소를 클론하는 곳
     dir: ${CODEAGENT_WORKSPACE:./workspace}

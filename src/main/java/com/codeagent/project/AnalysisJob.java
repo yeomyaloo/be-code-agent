@@ -55,18 +55,6 @@ public class AnalysisJob {
         this.finishedAt = null;
     }
 
-    public void finish(JobStatus status, String error) {
-        this.status = status;
-        this.error = error;
-        this.finishedAt = OffsetDateTime.now();
-    }
-
-    public void addUsage(long inputTokens, long outputTokens) {
-        this.inputTokens += inputTokens;
-        this.outputTokens += outputTokens;
-        this.usedTokens = this.inputTokens + this.outputTokens;
-    }
-
     public long remainingTokens() {
         return budgetTokens == null ? Long.MAX_VALUE : Math.max(0, budgetTokens - usedTokens);
     }

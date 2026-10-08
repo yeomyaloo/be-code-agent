@@ -96,9 +96,7 @@ public class VerificationService {
         AgentRun run = agentLoop.run(new AgentRequest(ModelTier.VERIFIER, VerifierPrompts.SYSTEM, prompt, tools,
                 context, agentProperties.maxSteps(), job.remainingTokens()));
 
-        AnalysisJob latest = jobRepository.findById(job.getId()).orElseThrow();
-        latest.addUsage(run.inputTokens(), run.outputTokens());
-        jobRepository.save(latest);
+        jobRepository.addUsage(job.getId(), run.inputTokens(), run.outputTokens());
 
         // submit_verdict 없이 끝났으면 (단계·예산 초과, 오류, 제출 누락) 판단 불가로 남긴다
         Map<String, Object> fallback = new LinkedHashMap<>();
