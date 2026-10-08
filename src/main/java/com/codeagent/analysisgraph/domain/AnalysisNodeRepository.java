@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
 
 import java.util.Optional;
@@ -39,6 +40,25 @@ public interface AnalysisNodeRepository extends JpaRepository<AnalysisNode, Long
     Optional<AnalysisNode> findForUpdate(Long id);
 
     List<AnalysisNode> findByJobIdOrderById(Long jobId);
+
+    /** 작업별·종류별·상태별 노드 수. 분석 목록에서 노드를 다 읽지 않고 개수만 보여줄 때 쓴다 */
+    @Query(nativeQuery = true, value = """
+            select job_id as jobId, kind, status, count(*) as count
+            from analysis_node
+            where job_id in (:jobIds) and kind in ('INTENTION', 'FINDING')
+            group by job_id, kind, status
+            """)
+    List<NodeCount> countByJob(Collection<Long> jobIds);
+
+    interface NodeCount {
+        Long getJobId();
+
+        String getKind();
+
+        String getStatus();
+
+        long getCount();
+    }
 
     List<AnalysisNode> findByJobIdAndKindAndStatusOrderById(Long jobId, AnalysisNodeKind kind, AnalysisNodeStatus status);
 }

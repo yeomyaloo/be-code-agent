@@ -11,7 +11,7 @@ Java/Spring 소스코드를 정적 파싱해 코드 그래프를 만들고, Clau
 ```
 
 - Windows PowerShell에서는 `.\gradlew.bat`.
-- DB가 필요한 테스트: `CodeAgentApplicationTests`, `CodeGraphReindexTest`, `AnalysisFlowTest`. API 키는 어떤 테스트에도 필요 없다.
+- DB가 필요한 테스트: `CodeAgentApplicationTests`, `CodeGraphReindexTest`, `AnalysisFlowTest`, `ReportTest`, `AnalysisListTest`. API 키는 어떤 테스트에도 필요 없다.
 - API 키와 DB 비밀번호는 `src/main/resources/application-local.yml`(git 제외)에 둔다. 예시는 `application-local.yml.example`.
 
 ## 구조

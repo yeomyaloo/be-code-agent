@@ -2,13 +2,16 @@ package com.codeagent.api;
 
 import com.codeagent.analysisgraph.AnalysisGraphService;
 import com.codeagent.analysisgraph.domain.AnalysisNode;
+import com.codeagent.analysisgraph.domain.AnalysisNodeKind;
 import com.codeagent.analysisgraph.domain.AnalysisNodeRepository;
+import com.codeagent.analysisgraph.domain.AnalysisNodeRepository.NodeCount;
 import com.codeagent.analysisgraph.domain.ReviewDecision;
 import com.codeagent.analysisgraph.domain.WorkerTrace;
 import com.codeagent.analysisgraph.domain.WorkerTraceRepository;
 import com.codeagent.orchestrator.AnalysisService;
 import com.codeagent.project.AnalysisJob;
 import com.codeagent.project.AnalysisJobRepository;
+import com.codeagent.project.ProjectRepository;
 import com.codeagent.report.HtmlReportWriter;
 import com.codeagent.report.ReportService;
 import com.codeagent.report.SarifWriter;
@@ -33,8 +36,11 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.stream.Collectors;
 
 @RestController
 @RequiredArgsConstructor
@@ -43,6 +49,7 @@ public class AnalysisController {
     private static final MediaType SARIF = MediaType.parseMediaType("application/sarif+json");
 
     private final AnalysisService analysisService;
+    private final ProjectRepository projectRepository;
     private final AnalysisJobRepository jobRepository;
     private final AnalysisNodeRepository nodeRepository;
     private final WorkerTraceRepository traceRepository;
@@ -74,6 +81,15 @@ public class AnalysisController {
     public record AnalysisView(JobView job, List<NodeView> nodes) {
     }
 
+    /**
+     * 분석 목록의 한 줄.
+     *
+     * @param intentionsFinished 끝난(DONE / FAILED) 할 일 수
+     * @param findings           발견 상태(OPEN / CONFIRMED / REJECTED / UNCERTAIN)별 개수. 없는 상태는 0
+     */
+    public record JobSummaryView(JobView job, long intentions, long intentionsFinished, Map<String, Long> findings) {
+    }
+
     public record TraceView(Long id, Long intentionId, String workerId, int step, String role, String toolName,
                             String content, OffsetDateTime createdAt) {
 
@@ -90,6 +106,42 @@ public class AnalysisController {
         long budget = request == null || request.budgetTokens() == null ? 2_000_000L : request.budgetTokens();
         AnalysisJob job = analysisService.start(projectId, maxIntentions, budget);
         return JobView.from(jobRepository.findById(job.getId()).orElseThrow());
+    }
+
+    /** 프로젝트의 분석 작업 목록 (최신순). 노드는 읽지 않고 할 일·발견 개수만 센다 */
+    @GetMapping("/api/projects/{projectId}/analyses")
+    public List<JobSummaryView> list(@PathVariable Long projectId) {
+        if (!projectRepository.existsById(projectId)) {
+            throw new NoSuchElementException("프로젝트 없음: " + projectId);
+        }
+        List<AnalysisJob> jobs = jobRepository.findByProjectIdOrderByIdDesc(projectId);
+        if (jobs.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, List<NodeCount>> counts = nodeRepository.countByJob(jobs.stream().map(AnalysisJob::getId).toList())
+                .stream()
+                .collect(Collectors.groupingBy(NodeCount::getJobId));
+
+        return jobs.stream().map(job -> {
+            List<NodeCount> jobCounts = counts.getOrDefault(job.getId(), List.of());
+            long intentions = 0;
+            long intentionsFinished = 0;
+            Map<String, Long> findings = new LinkedHashMap<>();
+            for (String status : List.of("OPEN", "CONFIRMED", "REJECTED", "UNCERTAIN")) {
+                findings.put(status, 0L);
+            }
+            for (NodeCount c : jobCounts) {
+                if (c.getKind().equals(AnalysisNodeKind.INTENTION.name())) {
+                    intentions += c.getCount();
+                    if (c.getStatus().equals("DONE") || c.getStatus().equals("FAILED")) {
+                        intentionsFinished += c.getCount();
+                    }
+                } else {
+                    findings.merge(c.getStatus(), c.getCount(), Long::sum);
+                }
+            }
+            return new JobSummaryView(JobView.from(job), intentions, intentionsFinished, findings);
+        }).toList();
     }
 
     @GetMapping("/api/analyses/{jobId}")

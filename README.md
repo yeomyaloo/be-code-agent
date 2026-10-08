@@ -290,6 +290,7 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 | API | 설명 |
 |---|---|
 | `POST /api/projects/{id}/analyses` | 분석 시작. `maxIntentions`(1~100), `budgetTokens`(1만 이상) |
+| `GET /api/projects/{id}/analyses` | 프로젝트의 분석 작업 목록 (최신순). 작업마다 할 일 수, 끝난 할 일 수, 발견 상태별 개수(`OPEN` / `CONFIRMED` / `REJECTED` / `UNCERTAIN`) |
 | `GET /api/analyses/{jobId}` | 작업 상태(`RUNNING` / `DONE` / `STOPPED` / `FAILED`), 토큰 사용량, 오류, 분석 그래프 노드 전체 |
 | `GET /api/analyses/{jobId}/findings?status=` | 발견 목록 (CWE, 심각도, 확신도, 근거 코드 위치, 검증 결과). `status`로 거르기: `OPEN`(검증 대기) / `CONFIRMED` / `REJECTED` / `UNCERTAIN` |
 | `POST /api/analyses/{jobId}/verify` | 검증 대기 발견을 다시 검증 (끝난 작업만, 진행 중이면 400) |
@@ -493,6 +494,7 @@ be-code-agent/
     ├── java/.../GitUrlPolicyTest.java               Git 주소 검사 테스트 (DB·네트워크 불필요)
     ├── java/.../GitClonerTest.java                  로컬 원격 저장소로 클론 테스트 (DB·네트워크 불필요)
     ├── java/.../ReportTest.java                     SARIF·HTML 보고서, 사람 검토 테스트 (DB 필요)
+    ├── java/.../AnalysisListTest.java               프로젝트별 분석 목록 API 테스트 (DB 필요)
     └── resources/fixtures/vulnerable-app/           테스트용 취약 예제 앱
 ```
 

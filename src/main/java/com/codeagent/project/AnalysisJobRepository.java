@@ -6,10 +6,14 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> {
 
     boolean existsByProjectIdAndStatus(Long projectId, JobStatus status);
+
+    /** 프로젝트의 분석 작업, 최신순 */
+    List<AnalysisJob> findByProjectIdOrderByIdDesc(Long projectId);
 
     /**
      * 토큰 사용량을 DB에서 바로 더한다.
