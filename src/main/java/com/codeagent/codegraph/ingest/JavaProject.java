@@ -23,6 +23,7 @@ import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeS
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -215,7 +216,7 @@ public class JavaProject {
         for (Path sourceRoot : sourceRoots) {
             try (Stream<Path> paths = Files.walk(sourceRoot)) {
                 paths.filter(p -> p.toString().endsWith(".java"))
-                        .filter(Files::isRegularFile)
+                        .filter(p -> Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS))
                         .filter(p -> !isSkipped(sourceRoot.relativize(p)))
                         .forEach(files::add);
             } catch (IOException e) {

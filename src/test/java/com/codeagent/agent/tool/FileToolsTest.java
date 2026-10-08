@@ -1,12 +1,16 @@
 package com.codeagent.agent.tool;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class FileToolsTest {
 
@@ -60,6 +64,23 @@ class FileToolsTest {
         assertThatThrownBy(() -> grepCode.execute(input(Map.of()), CONTEXT))
                 .isInstanceOf(ToolInputException.class)
                 .hasMessageContaining("pattern");
+    }
+
+    @Test
+    void 저장소_밖을_가리키는_심볼릭_링크는_읽지_않는다(@TempDir Path temp) throws IOException {
+        Path repo = Files.createDirectories(temp.resolve("repo"));
+        Path secret = Files.writeString(temp.resolve("secret.txt"), "비밀");
+        try {
+            Files.createSymbolicLink(repo.resolve("link.java"), secret);
+        } catch (IOException | UnsupportedOperationException e) {
+            assumeTrue(false, "이 환경은 심볼릭 링크를 만들 수 없음");
+        }
+        ToolContext context = new ToolContext(1L, repo, 1L, 1L, "test");
+
+        assertThatThrownBy(() -> readFile.execute(input(Map.of("path", "link.java")), context))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessageContaining("저장소 밖");
+        assertThat(grepCode.execute(input(Map.of("pattern", "비밀")), context)).isEqualTo("일치하는 줄 없음");
     }
 
     private static ToolInput input(Map<String, Object> values) {

@@ -30,6 +30,14 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 
 ## 주요 기능
 
+### 저장소 등록 (구현됨)
+
+- **Git 주소로 등록**: 공개 저장소의 https 주소를 주면 서버의 작업 폴더(`workspace/`)에 최신 커밋 하나만 얕게 클론한다. 브랜치를 생략하면 원격 저장소의 기본 브랜치를 쓰고, 받은 브랜치와 커밋 해시를 기록한다.
+- **동기화**: 같은 주소에서 최신 커밋을 다시 받는다. 분석 작업이 진행 중이면 거부한다.
+- **서버 보호**: 이 서버가 내부망을 찌르는 통로(SSRF)가 되지 않도록 `https` + 허용 호스트(기본 github.com, gitlab.com, bitbucket.org) + 공인 IP로 풀리는 주소만 받는다. 주소에 계정 정보·포트·쿼리를 넣을 수 없다.
+- **받은 코드는 읽기만**: 서브모듈은 받지 않고, 저장소 밖을 가리킬 수 있는 심볼릭 링크는 지운다. 크기 상한(기본 500MB)을 넘으면 지우고 실패 처리한다. 파일 도구도 실제 경로로 한 번 더 검사해 저장소 밖 파일을 읽지 못하게 한다.
+- **로컬 경로 등록**: 개발용으로 서버 디스크의 폴더 경로도 받는다. 여러 사람이 쓰는 서버라면 `allow-local-path: false`로 끈다.
+
 ### 코드 그래프 생성 (구현됨)
 
 - **라이브러리 jar 없이 소스만으로 분석**: import 문과 변수·필드 선언으로 타입을 알아내고, 안 되면 JavaParser symbol solver에 맡긴다. 빌드하지 않은 저장소도 바로 분석할 수 있다.
@@ -82,6 +90,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 단계 | 내용 | 상태 |
 |---|---|---|
 | 1 | 프로젝트 뼈대, DB 스키마 (코드 그래프 + 분석 그래프) | ✅ 완료 |
+| 1-1 | Git 주소로 저장소 등록(공개 저장소, 얕은 클론), 동기화, SSRF·심볼릭 링크 차단 | ✅ 완료 |
 | 2 | 코드 그래프 생성 (Java/Spring 파싱, 진입점·위험 지점·호출 관계) | ✅ 완료 |
 | 3 | 코드 그래프 조회 API (진입점, 위험 지점, 호출 경로, 호출자/피호출자) | ✅ 완료 |
 | 4 | LLM 연동(Anthropic Java SDK), Worker 도구 8개, Worker 에이전트 루프 | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
@@ -153,8 +162,10 @@ Windows PowerShell에서는 `.\gradlew.bat bootRun`.
 | `DB_USERNAME` | `codeagent` | DB 사용자 |
 | `DB_PASSWORD` | `codeagent` | DB 비밀번호 |
 | `ANTHROPIC_API_KEY` | (없음) | Anthropic API 키 (`codeagent.llm.api-key`) |
+| `CODEAGENT_WORKSPACE` | `./workspace` | Git 저장소를 클론하는 폴더 |
+| `CODEAGENT_ALLOW_LOCAL_PATH` | `true` | 서버 디스크 폴더 경로로 등록 허용 여부 |
 
-- JPA는 `ddl-auto: validate`라서 스키마 변경은 반드시 Flyway 마이그레이션 파일(`V3__...sql`처럼 다음 번호)로 한다. 이미 적용된 마이그레이션 파일은 고치지 않는다.
+- JPA는 `ddl-auto: validate`라서 스키마 변경은 반드시 Flyway 마이그레이션 파일(`V5__...sql`처럼 다음 번호)로 한다. 이미 적용된 마이그레이션 파일은 고치지 않는다.
 - 가상 스레드(`spring.threads.virtual.enabled`)가 켜져 있다.
 
 ### 비밀 값 관리
@@ -188,20 +199,46 @@ API 키·비밀번호 같은 비밀 값은 `application.yml`에 **자리만** �
 
 시스템 프롬프트(`agent/WorkerPrompts.java`, `agent/VerifierPrompts.java`)는 할 일마다 같아서 프롬프트 캐시가 걸려 있다.
 
+### 저장소 클론 설정
+
+`application.yml`의 `codeagent.workspace`에서 바꾼다.
+
+| 설정 | 기본값 | 설명 |
+|---|---|---|
+| `dir` | `./workspace` | 클론하는 폴더 (git 제외) |
+| `allowed-hosts` | `github.com, gitlab.com, bitbucket.org` | 클론을 허용하는 호스트. 사내 Git 서버를 쓰려면 여기에 추가 |
+| `max-size-mb` | `500` | 저장소 크기 상한 |
+| `timeout-seconds` | `60` | 네트워크 연결·읽기 제한 시간 |
+| `allow-local-path` | `true` | 서버 디스크 폴더 경로로 등록 허용 |
+
+비공개 저장소(인증 토큰)는 아직 지원하지 않는다.
+
 ---
 
 ## 사용법
 
 ### 1. 분석할 저장소 등록
 
-경로는 슬래시(`/`)로 적는다.
+Git 주소로 등록한다. `name`을 생략하면 저장소 이름, `branch`를 생략하면 기본 브랜치를 쓴다.
 
 ```bash
 curl -X POST localhost:8080/api/projects -H "Content-Type: application/json" \
-     -d '{"name":"animealth-backend","repoPath":"C:/path/to/animealth-backend"}'
+     -d '{"gitUrl":"https://github.com/spring-projects/spring-petclinic"}'
 ```
 
-`language`를 생략하면 `java`로 등록된다.
+개발용으로 서버 디스크의 폴더를 등록할 수도 있다 (경로는 슬래시(`/`)로).
+
+```bash
+curl -X POST localhost:8080/api/projects -H "Content-Type: application/json" \
+     -d '{"name":"my-app","repoPath":"C:/path/to/my-app"}'
+```
+
+| API | 설명 |
+|---|---|
+| `POST /api/projects` | 등록. `gitUrl`(+ `branch`)과 `repoPath` 중 하나만. `name`, `language`(기본 `java`)는 선택 |
+| `POST /api/projects/{id}/sync` | Git 저장소를 최신 커밋으로 다시 받기. 이어서 `/index`를 호출해 코드 그래프를 갱신한다 |
+
+응답의 `gitBranch`, `commitSha`, `syncedAt`으로 어느 커밋을 분석하는지 알 수 있다.
 
 ### 2. 코드 그래프 만들기
 
@@ -258,7 +295,8 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 ```
 
 - `CodeGraphBuilderTest`는 DB 없이 돈다. 일부러 취약하게 만든 예제 앱(`src/test/resources/fixtures/vulnerable-app`)을 파싱해서 진입점·위험 지점·상속 연결·도달 경로를 검증한다.
-- `FileToolsTest`는 DB 없이 돈다. `read_file`·`grep_code` 도구의 범위 읽기, 저장소 밖 경로 차단, 입력 오류 처리를 검증한다.
+- `FileToolsTest`는 DB 없이 돈다. `read_file`·`grep_code` 도구의 범위 읽기, 저장소 밖 경로·심볼릭 링크 차단, 입력 오류 처리를 검증한다.
+- `GitUrlPolicyTest`, `GitClonerTest`는 DB·네트워크 없이 돈다. 허용하지 않는 주소(http, file://, 계정 정보, 내부망 IP 등) 거부와, 로컬에 만든 원격 저장소로 얕은 클론·브랜치 지정·크기 상한을 검증한다. 심볼릭 링크 테스트는 링크를 만들 권한이 없는 환경(Windows 일반 계정)에서는 건너뛴다.
 - `CodeAgentApplicationTests`는 스프링 컨텍스트를 띄우므로 PostgreSQL이 떠 있어야 한다.
 - `CodeGraphReindexTest`는 예제 앱을 임시 폴더에 복사해서 파일을 고치고 지우며 다시 만들기를 검증한다 (노드 id 유지, 연결점 보존, 사라진 노드 정리). PostgreSQL이 필요하다.
 - `AnalysisFlowTest`는 실제 Claude 대신 가짜 `AgentLoop`가 도구를 직접 호출해서 할 일 생성 → 배분 → 사실·발견 기록 → 검증 판정(확정·오탐·판정 미제출) → 작업 종료 흐름과, Worker·Verifier 도구 구성, 검증 재실행을 검증한다. API 키는 필요 없지만 PostgreSQL이 필요하고, **로컬 `codeagent` DB에 테스트 데이터(프로젝트·분석 작업)를 남긴다.**
@@ -395,6 +433,8 @@ be-code-agent/
 ├── src/main/java/com/codeagent/
 │   ├── CodeAgentApplication.java                    진입점
 │   ├── project/                                     분석 대상 저장소(Project), 분석 작업(AnalysisJob)
+│   │   ├── ProjectService.java                      Git 주소 / 로컬 경로 등록, 동기화
+│   │   └── source/                                  GitUrlPolicy(주소 검사), GitCloner(JGit 얕은 클론)
 │   ├── codegraph/
 │   │   ├── domain/                                  CodeNode, CodeEdge 엔티티와 종류(enum)
 │   │   ├── ingest/                                  코드 그래프 생성
@@ -426,12 +466,15 @@ be-code-agent/
 │   └── db/migration/
 │       ├── V1__init.sql                             전체 스키마
 │       ├── V2__job_error_and_usage.sql              분석 작업 오류·토큰 사용량 칸
-│       └── V3__code_node_reindex.sql                코드 노드 indexed_at / removed_at
+│       ├── V3__code_node_reindex.sql                코드 노드 indexed_at / removed_at
+│       └── V4__project_git_source.sql               프로젝트 Git 주소·브랜치·커밋
 └── src/test/
     ├── java/.../CodeGraphBuilderTest.java           코드 그래프 테스트 (DB 불필요)
     ├── java/.../CodeGraphReindexTest.java           코드 그래프 재생성 테스트 (DB 필요)
     ├── java/.../FileToolsTest.java                  파일 도구 테스트 (DB 불필요)
     ├── java/.../AnalysisFlowTest.java               분석 흐름 통합 테스트 (DB 필요, API 키 불필요)
+    ├── java/.../GitUrlPolicyTest.java               Git 주소 검사 테스트 (DB·네트워크 불필요)
+    ├── java/.../GitClonerTest.java                  로컬 원격 저장소로 클론 테스트 (DB·네트워크 불필요)
     └── resources/fixtures/vulnerable-app/           테스트용 취약 예제 앱
 ```
 

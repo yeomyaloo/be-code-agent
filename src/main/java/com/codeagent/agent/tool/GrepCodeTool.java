@@ -8,6 +8,7 @@ import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.ArrayList;
@@ -60,7 +61,7 @@ public class GrepCodeTool implements AgentTool {
         List<String> matches = new ArrayList<>();
         boolean truncated = false;
         try (Stream<Path> files = Files.walk(root)) {
-            for (Path file : (Iterable<Path>) files.filter(Files::isRegularFile)::iterator) {
+            for (Path file : (Iterable<Path>) files.filter(p -> Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS))::iterator) {
                 Path relative = root.relativize(file);
                 if (RepoPaths.isSkipped(relative) || !matcher.matches(relative)) {
                     continue;

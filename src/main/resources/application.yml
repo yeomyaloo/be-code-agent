@@ -40,3 +40,12 @@ codeagent:
       effort: high
   agent:
     max-steps: 40
+  workspace:
+    # Git 주소로 등록한 저장소를 클론하는 곳
+    dir: ${CODEAGENT_WORKSPACE:./workspace}
+    # 클론을 허용하는 호스트 (https만). 내부망 접근(SSRF)을 막기 위해 목록에 있는 곳만 받는다
+    allowed-hosts: github.com, gitlab.com, bitbucket.org
+    max-size-mb: 500
+    timeout-seconds: 60
+    # 서버 디스크의 폴더 경로로 등록 허용. 여러 사람이 쓰는 서버면 false 로
+    allow-local-path: ${CODEAGENT_ALLOW_LOCAL_PATH:true}

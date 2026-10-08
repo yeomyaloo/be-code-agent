@@ -67,3 +67,6 @@ desktop.ini
 ### 프론트엔드 (나중에 Next.js 추가 시) ###
 node_modules/
 .next/
+
+### 클론한 분석 대상 저장소 ###
+workspace/

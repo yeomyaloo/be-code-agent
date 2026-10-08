@@ -25,6 +25,7 @@ dependencies {
 	implementation 'org.flywaydb:flyway-database-postgresql'
 	implementation 'com.github.javaparser:javaparser-symbol-solver-core:3.26.4'
 	implementation 'com.anthropic:anthropic-java:2.68.0'
+	implementation 'org.eclipse.jgit:org.eclipse.jgit:7.8.0.202609011348-r'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
 	annotationProcessor 'org.projectlombok:lombok'
