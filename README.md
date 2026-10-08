@@ -7,6 +7,8 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 
 > 현재 단계: **코드 그래프 생성·조회, Claude 연동 Worker 에이전트 루프, 발견 검증(Verifier)까지 구현됨.** 할 일은 코드 그래프의 진입점 → 위험 지점 경로에서 기계적으로 만들고 Worker 여러 개(기본 3)가 나눠 처리한 뒤, Verifier가 발견을 하나씩 다시 확인한다. LLM Planner는 아직 구현 전이다. 자세한 내용은 [진행 상황](#진행-상황)을 참고.
 
+> 웹 화면: **[fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)** (React). 저장소 등록, 코드 그래프 조회, 분석 시작, 진행 상황·에이전트 기록 타임라인, 발견 검토, 보고서를 브라우저에서 할 수 있다.
+
 ![be-code-agent 아키텍처](docs/images/architecture.svg)
 
 ---
@@ -107,7 +109,8 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 5-2 | LLM Planner | ⬜ 예정 |
 | 6 | 발견 검증(Verifier, 오탐 제거) | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
 | 7 | 보고서 (SARIF 2.1.0, HTML), 사람 검토 API | ✅ 완료 |
-| 8 | 웹 UI, 실시간 진행 상황(SSE), 사람 승인 단계 | ⬜ 예정 |
+| 8 | 웹 UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent), 진행 상황은 2초 폴링) | ✅ 완료 |
+| 8-1 | 실시간 진행 상황(SSE), 사람 승인 단계 | ⬜ 예정 |
 
 ---
 
@@ -415,7 +418,7 @@ VerificationService         검증 대기(OPEN) FINDING마다 Verifier 에이전
 ARTEX의 Planner 반복 + Worker 병렬 실행 구조를 그대로 가져갈 계획이다.
 
 ```
-             [ 사용자 / REST API / (예정) 웹 UI ]
+             [ 사용자 / REST API / 웹 UI (fe-code-agent) ]
                             │
                       ┌─────▼──────┐
                       │  Planner   │ ← 공유 할 일 목록 (DEPENDS_ON으로 순서 관리)
