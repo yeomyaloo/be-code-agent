@@ -51,11 +51,11 @@
   <text x="168" y="317" class="m">진입점 → 위험 지점 경로</text>
 
   <!-- ② Planner -->
-  <rect x="60" y="328" width="190" height="100" rx="10" fill="#ffffff" stroke="#8c959f" stroke-width="1.4" stroke-dasharray="6 4"/>
-  <text x="78" y="354" class="h">② Planner 자리</text>
-  <text x="78" y="375" class="code">AnalysisService</text>
-  <text x="78" y="396" class="t">경로마다 할 일 생성</text>
-  <text x="78" y="416" class="m">현재 규칙 기반 (LLM 아님)</text>
+  <rect x="60" y="328" width="190" height="100" rx="10" fill="#ffffff" stroke="#8250df" stroke-width="1.6"/>
+  <text x="78" y="354" class="h">② Planner (회차)</text>
+  <text x="78" y="375" class="code">AgentLoop</text>
+  <text x="78" y="396" class="t">+ Planner 프롬프트</text>
+  <text x="78" y="416" class="m">할 일 계획 → 결과 보고 보완</text>
 
   <!-- ③ Worker -->
   <rect x="275" y="328" width="190" height="100" rx="10" fill="#ffffff" stroke="#8250df" stroke-width="1.6"/>
@@ -71,17 +71,19 @@
   <text x="508" y="396" class="t">+ Verifier 프롬프트</text>
   <text x="508" y="416" class="m">발견 재검증 → 확정 / 기각</text>
 
-  <line x1="250" y1="378" x2="273" y2="378" class="edge" marker-end="url(#arrow)"/>
+  <line x1="250" y1="370" x2="273" y2="370" class="edge" marker-end="url(#arrow)"/>
+  <line x1="275" y1="392" x2="252" y2="392" class="edge" marker-end="url(#arrow)" stroke-dasharray="4 3"/>
   <line x1="465" y1="378" x2="488" y2="378" class="edge" marker-end="url(#arrow)"/>
 
   <!-- 도구 -->
   <line x1="370" y1="428" x2="370" y2="456" class="edge" marker-end="url(#arrow)"/>
   <line x1="585" y1="428" x2="585" y2="456" class="edge" marker-end="url(#arrow)"/>
   <rect x="60" y="458" width="620" height="88" rx="10" fill="#fbf7ff" stroke="#8250df" stroke-width="1.4"/>
-  <text x="78" y="483" class="h">도구 9개</text>
-  <text x="148" y="483" class="m">LLM이 골라서 요청하면 백엔드가 실행</text>
-  <text x="78" y="508" class="code">read_file · grep_code · find_code_nodes · get_callers · get_callees</text>
-  <text x="78" y="530" class="code">search_worker_traces · record_fact · record_finding · submit_verdict</text>
+  <text x="78" y="480" class="h">도구 14개</text>
+  <text x="156" y="480" class="m">역할마다 쓸 수 있는 도구가 다름. LLM이 골라서 요청하면 백엔드가 실행</text>
+  <text x="78" y="500" class="code" style="font-size:11px">Planner  list_sink_paths · list_entry_points · get_plan · add_intention · finish_planning</text>
+  <text x="78" y="518" class="code" style="font-size:11px">Worker   read_file · grep_code · find_code_nodes · get_callers/callees · record_fact/finding</text>
+  <text x="78" y="536" class="code" style="font-size:11px">Verifier 읽기 도구 + submit_verdict   (공통 읽기 도구는 Planner 도 씀)</text>
 
   <!-- DB -->
   <line x1="370" y1="546" x2="370" y2="562" class="edge" marker-end="url(#arrow)"/>
@@ -99,7 +101,7 @@
   <text x="792" y="414" class="t">Verifier</text>
   <text x="968" y="414" text-anchor="end" class="t">Opus 5.5</text>
   <text x="792" y="438" class="t">Planner</text>
-  <text x="968" y="438" text-anchor="end" class="m">Opus 5.5 (예정)</text>
+  <text x="968" y="438" text-anchor="end" class="t">Opus 5.5</text>
 
   <!-- 요청 / 응답 -->
   <path d="M680,352 L768,352" class="edge-llm" marker-end="url(#arrow-llm)"/>

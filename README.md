@@ -5,7 +5,13 @@
 be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그래프**를 만들고, 그 위에서 LLM 에이전트가 "사용자 입력이 위험한 API까지 도달하는가"를 추적해 취약점을 찾고 검증하는 것을 목표로 한다.
 아키텍처는 [ARTEX](https://github.com/Autumn-27/ARTEX)의 이중 그래프 + Planner/Worker 구조를 참고했고, 코드는 모두 새로 작성했다. ARTEX가 **살아있는 서버**를 탐색한다면, be-code-agent는 **소스코드**를 탐색한다.
 
-> 현재 단계: **코드 그래프 생성·조회, Claude 연동 Worker 에이전트 루프, 발견 검증(Verifier)까지 구현됨.** 할 일은 코드 그래프의 진입점 → 위험 지점 경로에서 기계적으로 만들고 Worker 여러 개(기본 3)가 나눠 처리한 뒤, Verifier가 발견을 하나씩 다시 확인한다. LLM Planner는 아직 구현 전이다. 자세한 내용은 [진행 상황](#진행-상황)을 참고.
+> 현재 단계: **Planner → Worker → Verifier 에이전트 구조까지 구현됨.**
+> - **Planner(Opus)**: 코드 그래프를 보고 조사할 일을 정한다. 경로 조사뿐 아니라 권한 검사 누락이나 보안 설정 점검도 할 일로 만든다.
+> - **Worker 여러 개(Sonnet)**: 할 일을 나눠서 조사한다.
+> - **Planner 다음 회차**: 조사 결과를 보고 후속 할 일을 더하거나 계획을 끝낸다. 최대 3회차까지 돈다.
+> - **Verifier(Opus)**: 마지막에 발견을 하나씩 다시 확인한다.
+>
+> 자세한 내용은 [진행 상황](#진행-상황)을 참고.
 
 > 웹 화면: **[fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)** (React). 저장소 등록, 코드 그래프 조회, 분석 시작, 진행 상황·에이전트 기록 타임라인, 발견 검토, 보고서를 브라우저에서 할 수 있다.
 
@@ -61,9 +67,31 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 
 - **진입점 → 위험 지점 경로 탐색**: PostgreSQL 재귀 CTE로 "어느 API에서 어느 위험 지점까지 어떤 메서드들을 거쳐 도달하는지"를 뽑는다. 인터페이스를 거치는 호출도 따라간다.
 
-### 에이전트 분석 (일부 구현됨)
+### 에이전트 분석 (구현됨)
 
-- **할 일 생성**: 진입점 → 위험 지점 경로마다 (진입점, 위험 지점) 쌍 하나당 가장 짧은 경로로 할 일(INTENTION)을 만든다.
+- **할 일 생성**: 두 가지 방식 중 고른다 (`planner`).
+  - `llm` (기본): **Planner 에이전트**(기본 Claude Opus 5.5)가 할 일(INTENTION)을 공유 할 일 목록에 만든다.
+    - **1회차**: 진입점 → 위험 지점 경로와 진입점 목록을 보고 계획한다. 경로가 없어도 문제가 될 수 있는 일도 할 일로 만든다.
+      - 경로 변수(`{id}`)로 데이터를 다루는 API의 소유자 확인 누락(CWE-639)
+      - 관리 기능의 역할 검사 누락(CWE-862)
+      - 보안 설정, 하드코딩된 비밀값
+    - **2회차부터**: Worker들이 할 일을 다 끝낸 뒤 결론과 발견을 보고, 후속 조사가 필요하면 할 일을 더한다. 필요 없으면 `finish_planning`으로 끝낸다.
+    - **순서가 필요한 일**: `depends_on`(DEPENDS_ON 연결선)으로 걸면 선행 할 일이 끝난 뒤 시작된다. 선행 할 일이 실패하면 뒤의 할 일도 실패로 표시한다.
+    - **멈추는 조건**: 할 일 수 상한(`maxIntentions`)과 최대 회차(`planner-rounds`, 기본 3)를 넘지 않는다.
+  - `paths`: 진입점 → 위험 지점 경로마다, (진입점, 위험 지점) 쌍 하나당 가장 짧은 경로로 할 일을 기계적으로 만든다.
+- **Planner 도구**
+  - 전용 5개
+
+    | 도구 | 하는 일 |
+    |---|---|
+    | `list_sink_paths` | 진입점 → 위험 지점 경로 (쌍마다 가장 짧은 것), 이미 할 일이 있는 경로 표시 |
+    | `list_entry_points` | HTTP 진입점 전체 (위험 지점에 닿지 않는 것 포함, 권한 점검 후보) |
+    | `get_plan` | 공유 할 일 목록: 상태, 만든 회차, 선행 할 일, Worker 결론 요약, 발견 |
+    | `add_intention` | 할 일 추가 (지시, 선택적으로 진입점·위험 지점, 분류·CWE, 선행 할 일). 같은 경로 중복과 상한 초과는 막는다 |
+    | `finish_planning` | 계획을 끝냄 (다음 회차를 열지 않음) |
+
+  - 읽기 전용 6개: `read_file`, `grep_code`, `find_code_nodes`, `get_callers`, `get_callees`, `search_worker_traces`
+  - Planner는 사실·발견을 기록하지 않는다.
 - **Worker 에이전트 루프**: Claude가 도구를 호출하며 "외부 입력이 막힘 없이 위험 지점까지 가는가"를 코드로 확인하고, 판정(취약 / 취약하지 않음 / 판단 불가)과 근거를 남긴다. 모든 단계는 `worker_trace`에 기록된다.
 - **Worker 도구 8개**
 
@@ -84,7 +112,6 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
   - 판정: `CONFIRMED`(공격 가능) / `REJECTED`(오탐) / `UNCERTAIN`(근거 부족). 판정 근거·확인한 방어 장치·재평가한 심각도는 발견의 `props.verification`에 저장된다.
   - Verifier가 판정을 제출하지 못하고 끝나면(단계·예산 초과, 오류) `UNCERTAIN`으로 남긴다.
 - **Worker 병렬 실행**: 분석 작업 하나에 Worker 여러 개(`codeagent.agent.workers`, 기본 3)가 동시에 돈다. 할 일은 `SELECT ... FOR UPDATE SKIP LOCKED`로 가져가서 같은 할 일을 두 번 처리하지 않고, 토큰 사용량은 DB에서 원자적으로 더해 서로 덮어쓰지 않는다. 한 Worker가 첫 호출부터 실패하면(인증 오류 등) 나머지 Worker도 멈춘다.
-- **예정**: LLM Planner가 아직 검사하지 않은 경로만 골라 할 일 배포
 
 ### 보고서와 사람 검토 (구현됨)
 
@@ -106,7 +133,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 4 | LLM 연동(Anthropic Java SDK), Worker 도구 8개, Worker 에이전트 루프 | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
 | 5 | 공유 할 일 목록(`SKIP LOCKED`)과 분석 작업 API | ✅ 완료 |
 | 5-1 | Worker 병렬 실행 (`workers`, 기본 3) | ✅ 완료 |
-| 5-2 | LLM Planner | ⬜ 예정 |
+| 5-2 | LLM Planner (여러 회차 계획, 경로 없는 점검 계획, DEPENDS_ON 순서, 실패 연쇄 처리) | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
 | 6 | 발견 검증(Verifier, 오탐 제거) | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
 | 7 | 보고서 (SARIF 2.1.0, HTML), 사람 검토 API | ✅ 완료 |
 | 8 | 웹 UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent), 진행 상황은 2초 폴링) | ✅ 완료 |
@@ -204,13 +231,15 @@ API 키·비밀번호 같은 비밀 값은 `application.yml`에 **자리만** �
 | `codeagent.llm.worker.model` | `claude-sonnet-5-5` | Worker가 쓰는 모델 |
 | `codeagent.llm.worker.effort` | `medium` | Worker 추론 깊이 (`low` / `medium` / `high` / `xhigh` / `max`) |
 | `codeagent.llm.verifier.*` | `claude-opus-5-5`, `high` | Verifier가 쓰는 모델·추론 깊이 |
-| `codeagent.llm.planner.*` | `claude-opus-5-5`, `high` | Planner용 (아직 사용하는 코드 없음) |
+| `codeagent.llm.planner.*` | `claude-opus-5-5`, `high` | Planner가 쓰는 모델·추론 깊이 |
 | `codeagent.llm.max-tokens` | `16000` | 응답 하나의 최대 출력 토큰 |
 | `codeagent.llm.fallbacks` | `true` | 모델이 안전 분류기로 요청을 거절하면 서버가 다른 모델로 자동 재시도 |
 | `codeagent.agent.max-steps` | `40` | 할 일 하나에 쓸 수 있는 최대 LLM 호출 횟수 |
 | `codeagent.agent.workers` | `3` | 분석 작업 하나에서 동시에 도는 Worker 수. API 요청 한도(분당 요청·토큰)에 맞춰 조절 |
+| `codeagent.agent.planner` | `llm` | 요청에서 정하지 않았을 때의 할 일 생성 방식 (`llm` / `paths`) |
+| `codeagent.agent.planner-rounds` | `3` | Planner가 할 일을 정하는 최대 회차 |
 
-시스템 프롬프트(`agent/WorkerPrompts.java`, `agent/VerifierPrompts.java`)는 할 일마다 같아서 프롬프트 캐시가 걸려 있다.
+시스템 프롬프트(`agent/PlannerPrompts.java`, `agent/WorkerPrompts.java`, `agent/VerifierPrompts.java`)는 회차·할 일마다 같아서 프롬프트 캐시가 걸려 있다.
 
 ### 저장소 클론 설정
 
@@ -282,14 +311,14 @@ curl -X POST localhost:8080/api/projects/1/index
 ### 4. 에이전트 분석 (API 키 필요)
 
 ```bash
-# 분석 시작 (백그라운드 실행, 바로 202 응답). 생략 시 할 일 5개, 토큰 예산 200만
+# 분석 시작 (백그라운드 실행, 바로 202 응답). 생략 시 planner=llm, 할 일 상한 10개(paths 면 5개), 토큰 예산 200만
 curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: application/json" \
-     -d '{"maxIntentions":2,"budgetTokens":300000}'
+     -d '{"planner":"llm","maxIntentions":8,"budgetTokens":1000000}'
 ```
 
 | API | 설명 |
 |---|---|
-| `POST /api/projects/{id}/analyses` | 분석 시작. `maxIntentions`(1~100), `budgetTokens`(1만 이상) |
+| `POST /api/projects/{id}/analyses` | 분석 시작. `planner`(`llm` / `paths`), `maxIntentions`(1~100, 할 일 수 상한), `budgetTokens`(1만 이상) |
 | `GET /api/projects/{id}/analyses` | 프로젝트의 분석 작업 목록 (최신순). 작업마다 할 일 수, 끝난 할 일 수, 발견 상태별 개수(`OPEN` / `CONFIRMED` / `REJECTED` / `UNCERTAIN`) |
 | `GET /api/analyses/{jobId}` | 작업 상태(`RUNNING` / `DONE` / `STOPPED` / `FAILED`), 토큰 사용량, 오류, 분석 그래프 노드 전체 |
 | `GET /api/analyses/{jobId}/findings?status=` | 발견 목록 (CWE, 심각도, 확신도, 근거 코드 위치, 검증 결과). `status`로 거르기: `OPEN`(검증 대기) / `CONFIRMED` / `REJECTED` / `UNCERTAIN` |
@@ -297,10 +326,10 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 | `POST /api/analyses/{jobId}/findings/{findingId}/review` | 사람 검토 기록. `{"decision":"FALSE_POSITIVE","comment":"테스트 코드"}` (`ACCEPTED` / `FALSE_POSITIVE` / `FIXED` / `WONT_FIX`) |
 | `GET /api/analyses/{jobId}/report.sarif?includeDismissed=` | SARIF 2.1.0 보고서 파일 |
 | `GET /api/analyses/{jobId}/report.html?includeDismissed=` | HTML 보고서 (브라우저로 열기) |
-| `GET /api/analyses/{jobId}/traces?intentionId=` | 분석 기록 (Claude 응답, 도구 호출·결과). Worker 기록은 할 일 id, Verifier 기록은 발견 id로 거른다 |
+| `GET /api/analyses/{jobId}/traces?intentionId=` | 분석 기록 (Claude 응답, 도구 호출·결과). Planner 기록은 목표(GOAL) id, Worker 기록은 할 일 id, Verifier 기록은 발견 id로 거른다 |
 
-할 일마다 "할 일 #N 결론" FACT 노드에 Worker의 최종 판정과 사용 토큰이 남는다. 확정된 취약점만 보려면 `findings?status=CONFIRMED`.
-코드 그래프를 먼저 만들어야 하며, 진입점 → 위험 지점 경로가 하나도 없으면 400을 돌려준다.
+할 일마다 "할 일 #N 결론" FACT 노드에 Worker의 최종 판정과 사용 토큰이 남고, Planner는 회차마다 "계획 N회차 결론" FACT를 남긴다. 확정된 취약점만 보려면 `findings?status=CONFIRMED`.
+코드 그래프를 먼저 만들어야 한다. `paths`는 진입점 → 위험 지점 경로가 하나도 없으면 400을 돌려준다. `llm`은 경로가 없어도 진입점이 있으면 권한 문제 등을 계획한다.
 
 ---
 
@@ -317,7 +346,8 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 - `CodeAgentApplicationTests`는 스프링 컨텍스트를 띄우므로 PostgreSQL이 떠 있어야 한다.
 - `CodeGraphReindexTest`는 예제 앱을 임시 폴더에 복사해서 파일을 고치고 지우며 다시 만들기를 검증한다 (노드 id 유지, 연결점 보존, 사라진 노드 정리). PostgreSQL이 필요하다.
 - `AnalysisFlowTest`는 실제 Claude 대신 가짜 `AgentLoop`가 도구를 직접 호출해서 할 일 생성 → 배분 → 사실·발견 기록 → 검증 판정(확정·오탐·판정 미제출) → 작업 종료 흐름과, Worker·Verifier 도구 구성, 검증 재실행을 검증한다. API 키는 필요 없지만 PostgreSQL이 필요하고, **로컬 `codeagent` DB에 테스트 데이터(프로젝트·분석 작업)를 남긴다.**
-- **Worker 도구 추가**: `agent/tool/AgentTool`을 구현한 `@Component`를 만들면 Worker에 자동으로 등록된다. 잘못된 입력은 `ToolInputException`을 던지면 Claude에게 오류로 전달되어 다시 시도하게 된다.
+- `PlannerFlowTest`는 같은 방식으로 LLM 계획 흐름을 검증한다: 계획 1회차(경로 할 일 + 경로 없는 권한 점검, DEPENDS_ON, 중복·잘못된 노드 거절) → Worker 실행 순서 → 2회차(get_plan 으로 결론 확인, 보완, 상한 초과 거절, finish_planning) → 3회차 생략, 선행 할 일 실패 시 연쇄 실패 처리.
+- **도구 추가**: `agent/tool/AgentTool`을 구현한 `@Component`를 만들고, 쓸 역할의 도구 목록(`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`)에 이름을 넣는다. 잘못된 입력은 `ToolInputException`을 던지면 Claude에게 오류로 전달되어 다시 시도하게 된다.
 - **위험 지점 규칙 추가**: `codegraph/ingest/SinkRules.java`의 `RULES`에 `rule(타입 FQN, 분류, CWE, 메서드...)`를 추가한다. 생성자는 메서드 이름 `<init>`으로 적는다.
 - **진입점 종류 추가**: `codegraph/ingest/EntryPointDetector.java`를 확장한다.
 
@@ -397,9 +427,12 @@ CodeGraphIndexer           노드 upsert(id 유지) → 사라진 노드 정리 
 POST /analyses
   │
   ▼
-AnalysisService.start()     진입점 → 위험 지점 경로마다 INTENTION 생성 (GOAL ─SPAWNS→ INTENTION, anchor 연결)
-  │                         가상 스레드에서 Worker N개(기본 3) 동시 시작
-  ▼
+AnalysisService.start()     GOAL 생성. paths 면 경로마다 INTENTION 생성 (GOAL ─SPAWNS→ INTENTION, anchor 연결)
+  │
+  ▼  planner=llm 이면
+Planner 1회차               AgentLoop(Opus, 계획 도구) → add_intention 으로 INTENTION 생성, "계획 1회차 결론" FACT
+  │
+  ▼  가상 스레드에서 Worker N개(기본 3) 동시 시작
 claimNextIntention()        선행 할 일(DEPENDS_ON)이 끝난 OPEN 할 일 하나를 CLAIMED로 (SELECT ... FOR UPDATE SKIP LOCKED)
   ▼
 AgentLoop.run()             Claude 호출 → tool_use면 도구 실행 → tool_result 돌려줌 → 반복
@@ -408,15 +441,21 @@ AgentLoop.run()             Claude 호출 → tool_use면 도구 실행 → tool
 결론 FACT 기록, INTENTION을 DONE / FAILED로 → 다음 할 일 (예산 소진 시 작업 STOPPED)
   │
   ▼  모든 Worker가 가져갈 할 일이 없어 멈추면
+failBlockedIntentions()     선행 할 일이 실패해 시작할 수 없는 할 일을 FAILED 로
+  │
+  ▼  planner=llm 이고 회차가 남았고 finish_planning 전이면
+Planner N회차               get_plan 으로 결과 확인 → 후속 할 일 추가 (있으면 Worker 다시 실행) / finish_planning
+  │
+  ▼  더 할 일이 없으면
 VerificationService         검증 대기(OPEN) FINDING마다 Verifier 에이전트 실행 (Opus, 읽기 전용 도구 + submit_verdict)
   │                         → CONFIRMED / REJECTED / UNCERTAIN, 판정 근거는 props.verification
   ▼
 작업 DONE (검증 중 예산 소진 시 STOPPED, 남은 발견은 POST /verify로 이어서 검증)
 ```
 
-### 계획 중인 에이전트 실행 구조
+### Planner · Worker · Verifier 구조
 
-ARTEX의 Planner 반복 + Worker 병렬 실행 구조를 그대로 가져갈 계획이다.
+ARTEX의 "Planner 여러 회차 + 공유 할 일 목록 + Worker 병렬 실행" 구조를 코드 분석에 맞게 옮겼다.
 
 ```
              [ 사용자 / REST API / 웹 UI (fe-code-agent) ]
@@ -424,21 +463,21 @@ ARTEX의 Planner 반복 + Worker 병렬 실행 구조를 그대로 가져갈 계
                       ┌─────▼──────┐
                       │  Planner   │ ← 공유 할 일 목록 (DEPENDS_ON으로 순서 관리)
                       └─────┬──────┘
-          아직 검사 안 한 경로만 INTENTION으로 배포
+          경로 조사·권한 점검 등을 INTENTION으로 배포
           ┌─────────────┬───┴─────────┬─────────────┐
       ┌───▼───┐     ┌───▼───┐     ┌───▼───┐     ┌───▼───┐
       │Worker1│     │Worker2│     │Worker3│ ... │WorkerN│  (가상 스레드)
       └───┬───┘     └───┬───┘     └───┬───┘     └───┬───┘
           └──── worker_trace로 서로의 분석 기록 검색 ───┘
                             │
-               FACT / FINDING 기록 → 그래프 변경 → Planner 다시 실행
+               FACT / FINDING 기록 → 할 일이 다 끝나면 Planner 다음 회차
                             │
                       ┌─────▼──────┐
                       │  Verifier  │ ← 발견마다 오탐 여부 재검토
                       └────────────┘
 ```
 
-종료 조건: 새로 검사할 경로가 없거나, 분석 작업의 토큰 예산(`analysis_job.budget_tokens`)을 다 썼을 때.
+종료 조건: Planner가 `finish_planning`을 부르거나 새 할 일을 만들지 않을 때, 최대 회차(`planner-rounds`)에 닿았을 때, 또는 분석 작업의 토큰 예산(`analysis_job.budget_tokens`)을 다 썼을 때.
 
 ---
 
@@ -469,11 +508,13 @@ be-code-agent/
 │   ├── llm/                                         LLM 설정(LlmProperties, AgentProperties), Anthropic 클라이언트
 │   ├── agent/
 │   │   ├── AgentLoop.java                           도구 호출 반복 흐름 (Claude ↔ 도구)
-│   │   ├── WorkerPrompts.java                       Worker 시스템 프롬프트, 할 일 프롬프트
+│   │   ├── PlannerPrompts.java                      Planner 시스템 프롬프트, 회차 프롬프트
+│   │   ├── WorkerPrompts.java                       Worker 시스템 프롬프트, 할 일 프롬프트 (경로 / 계획 지시)
 │   │   ├── VerifierPrompts.java                     Verifier 시스템 프롬프트, 발견 프롬프트
-│   │   └── tool/                                    Worker 도구 8개, Verifier 판정 도구, 입력 검증(ToolInput)
+│   │   └── tool/                                    Worker 도구 8개, Planner 도구 5개(+PlanSupport), Verifier 판정 도구, 입력 검증(ToolInput)
 │   ├── orchestrator/
-│   │   ├── AnalysisService.java                     분석 작업 생성, 할 일 배분, Worker 실행, 검증 단계 시작
+│   │   ├── AnalysisService.java                     분석 작업 생성, Planner 회차 ↔ Worker 실행 반복, 검증 단계 시작
+│   │   ├── PlannerMode.java                         할 일 생성 방식 (llm / paths)
 │   │   └── VerificationService.java                 검증 대기 발견마다 Verifier 실행
 │   ├── report/                                      보고서: ReportService(발견 모으기), SarifWriter, HtmlReportWriter
 │   ├── api/                                         REST 컨트롤러 (프로젝트, 코드 그래프, 분석, 보고서)
@@ -491,6 +532,7 @@ be-code-agent/
     ├── java/.../CodeGraphReindexTest.java           코드 그래프 재생성 테스트 (DB 필요)
     ├── java/.../FileToolsTest.java                  파일 도구 테스트 (DB 불필요)
     ├── java/.../AnalysisFlowTest.java               분석 흐름 통합 테스트 (DB 필요, API 키 불필요)
+    ├── java/.../PlannerFlowTest.java                LLM 계획 흐름 통합 테스트 (DB 필요, API 키 불필요)
     ├── java/.../GitUrlPolicyTest.java               Git 주소 검사 테스트 (DB·네트워크 불필요)
     ├── java/.../GitClonerTest.java                  로컬 원격 저장소로 클론 테스트 (DB·네트워크 불필요)
     ├── java/.../ReportTest.java                     SARIF·HTML 보고서, 사람 검토 테스트 (DB 필요)

@@ -42,6 +42,10 @@ codeagent:
     max-steps: 40
     # 분석 작업 하나에서 동시에 도는 Worker 수 (API 요청 한도에 맞춰 조절)
     workers: 3
+    # 할 일을 만드는 방식. llm: 계획 담당(Opus)이 정함, paths: 진입점 → 위험 지점 경로마다 기계적으로
+    planner: llm
+    # 계획 담당이 할 일을 정하는 최대 회차 (1회차 + 조사 결과를 보고 보완하는 회차)
+    planner-rounds: 3
   workspace:
     # Git 주소로 등록한 저장소를 클론하는 곳
     dir: ${CODEAGENT_WORKSPACE:./workspace}

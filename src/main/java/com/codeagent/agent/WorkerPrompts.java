@@ -13,7 +13,8 @@ public final class WorkerPrompts {
 
     public static final String SYSTEM = """
             당신은 Java/Spring 백엔드 소스코드를 감사하는 보안 분석가입니다.
-            맡은 할 일 하나(진입점 → 위험 지점 호출 경로 하나)를 조사해서, 외부 사용자가 이 경로로 실제 공격할 수 있는지 판단합니다.
+            맡은 할 일 하나를 조사해서, 외부 사용자가 실제로 공격할 수 있는지 판단합니다.
+            할 일은 진입점 → 위험 지점 호출 경로 하나이거나, 계획 담당이 정한 조사 지시(권한 검사 누락, 보안 설정 등)입니다.
 
             조사 방법
             - 경로상의 메서드를 read_file로 직접 읽고, 사용자 입력이 어떤 파라미터로 들어와 어떻게 바뀌며 위험 지점에 닿는지 따라갑니다.
@@ -61,7 +62,34 @@ public final class WorkerPrompts {
                 hops);
     }
 
-    private static String hop(CodeNodeView node) {
+    /** 계획 담당이 만든 할 일. 진입점 → 위험 지점 경로가 있으면 경로 정보를 함께 붙인다 */
+    public static String planned(String instructions, SinkPathView path) {
+        String body = """
+                할 일: 계획 담당의 지시에 따라 조사하세요.
+
+                계획 담당의 지시:
+                %s
+                """.formatted(instructions.strip());
+        if (path == null) {
+            return body;
+        }
+        String pathInfo = intention(path);
+        // intention() 의 첫 줄("할 일: ...")은 빼고 진입점·위험 지점·경로 정보만 붙인다
+        return body + "\n참고할 경로 정보:\n" + pathInfo.substring(pathInfo.indexOf('\n') + 1).strip() + "\n";
+    }
+
+    /** com.example.UserServiceImpl#search(String) → UserServiceImpl#search(String) */
+    public static String shortName(String qualifiedName) {
+        if (qualifiedName == null) {
+            return "";
+        }
+        int hash = qualifiedName.indexOf('#');
+        String owner = hash < 0 ? qualifiedName : qualifiedName.substring(0, hash);
+        String simple = owner.substring(owner.lastIndexOf('.') + 1);
+        return hash < 0 ? simple : simple + qualifiedName.substring(hash);
+    }
+
+    static String hop(CodeNodeView node) {
         String location = node.filePath() == null ? "" : "  (" + node.filePath() + ":" + node.line() + ")";
         return "- [" + node.id() + "] " + node.kind() + " " + node.qualifiedName() + location;
     }

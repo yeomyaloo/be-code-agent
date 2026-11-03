@@ -8,7 +8,9 @@ import com.codeagent.analysisgraph.domain.AnalysisNodeRepository.NodeCount;
 import com.codeagent.analysisgraph.domain.ReviewDecision;
 import com.codeagent.analysisgraph.domain.WorkerTrace;
 import com.codeagent.analysisgraph.domain.WorkerTraceRepository;
+import com.codeagent.llm.AgentProperties;
 import com.codeagent.orchestrator.AnalysisService;
+import com.codeagent.orchestrator.PlannerMode;
 import com.codeagent.project.AnalysisJob;
 import com.codeagent.project.AnalysisJobRepository;
 import com.codeagent.project.ProjectRepository;
@@ -56,8 +58,13 @@ public class AnalysisController {
     private final JsonMapper jsonMapper;
     private final AnalysisGraphService analysisGraph;
     private final ReportService reportService;
+    private final AgentProperties agentProperties;
 
-    public record StartAnalysisRequest(@Min(1) @Max(100) Integer maxIntentions, @Min(10_000) Long budgetTokens) {
+    /**
+     * @param maxIntentions 할 일 수 상한 (경로 계획이면 조사할 경로 수). 생략하면 LLM 계획 10, 경로 계획 5
+     * @param planner       llm(계획 담당이 할 일을 정함) 또는 paths(경로마다 기계적으로). 생략하면 codeagent.agent.planner
+     */
+    public record StartAnalysisRequest(@Min(1) @Max(100) Integer maxIntentions, @Min(10_000) Long budgetTokens, String planner) {
     }
 
     public record JobView(Long id, Long projectId, String status, Long budgetTokens, long usedTokens,
@@ -102,9 +109,12 @@ public class AnalysisController {
     @PostMapping("/api/projects/{projectId}/analyses")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public JobView start(@PathVariable Long projectId, @Valid @RequestBody(required = false) StartAnalysisRequest request) {
-        int maxIntentions = request == null || request.maxIntentions() == null ? 5 : request.maxIntentions();
+        PlannerMode planner = request == null || request.planner() == null || request.planner().isBlank()
+                ? agentProperties.planner() : PlannerMode.parse(request.planner());
+        int maxIntentions = request == null || request.maxIntentions() == null
+                ? (planner == PlannerMode.LLM ? 10 : 5) : request.maxIntentions();
         long budget = request == null || request.budgetTokens() == null ? 2_000_000L : request.budgetTokens();
-        AnalysisJob job = analysisService.start(projectId, maxIntentions, budget);
+        AnalysisJob job = analysisService.start(projectId, maxIntentions, budget, planner);
         return JobView.from(jobRepository.findById(job.getId()).orElseThrow());
     }
 

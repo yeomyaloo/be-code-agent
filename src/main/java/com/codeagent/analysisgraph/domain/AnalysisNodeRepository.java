@@ -3,6 +3,7 @@ package com.codeagent.analysisgraph.domain;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +41,19 @@ public interface AnalysisNodeRepository extends JpaRepository<AnalysisNode, Long
     Optional<AnalysisNode> findForUpdate(Long id);
 
     List<AnalysisNode> findByJobIdOrderById(Long jobId);
+
+    /** 선행 할 일(DEPENDS_ON) 중 하나라도 실패한 OPEN 할 일을 실패로 바꾼다. 한 단계씩만 처리한다 */
+    @Modifying
+    @Transactional
+    @Query(nativeQuery = true, value = """
+            update analysis_node n set status = 'FAILED'
+            where n.job_id = :jobId and n.kind = 'INTENTION' and n.status = 'OPEN'
+              and exists (
+                  select 1 from analysis_edge e
+                  join analysis_node d on d.id = e.dst_id
+                  where e.src_id = n.id and e.kind = 'DEPENDS_ON' and d.status = 'FAILED')
+            """)
+    int failBlockedIntentions(Long jobId);
 
     /** 작업별·종류별·상태별 노드 수. 분석 목록에서 노드를 다 읽지 않고 개수만 보여줄 때 쓴다 */
     @Query(nativeQuery = true, value = """

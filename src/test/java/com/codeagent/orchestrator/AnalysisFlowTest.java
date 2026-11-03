@@ -100,7 +100,7 @@ class AnalysisFlowTest {
             return new AgentRun(Outcome.COMPLETED, "판정: 취약", 3, 100, 50, 0, null);
         });
 
-        AnalysisJob job = analysisService.start(project.getId(), 10, 1_000_000);
+        AnalysisJob job = analysisService.start(project.getId(), 10, 1_000_000, PlannerMode.PATHS);
         AnalysisJob finished = waitUntilFinished(job.getId());
 
         // 픽스처의 (진입점, 위험 지점) 쌍: search→SQL, ping→exec, files GET/HEAD × (readAllBytes, Paths.get)
@@ -149,7 +149,7 @@ class AnalysisFlowTest {
             return new AgentRun(Outcome.COMPLETED, "판정: 취약하지 않음", 1, 10, 5, 0, null);
         });
 
-        AnalysisJob job = analysisService.start(project.getId(), 6, 1_000_000);
+        AnalysisJob job = analysisService.start(project.getId(), 6, 1_000_000, PlannerMode.PATHS);
         AnalysisJob finished = waitUntilFinished(job.getId());
 
         assertThat(finished.getStatus()).isEqualTo(JobStatus.DONE);
