@@ -39,16 +39,19 @@ public class AnalysisGraphService {
     private final AnalysisEdgeRepository edgeRepository;
     private final AnchorRepository anchorRepository;
     private final JsonMapper jsonMapper;
+    private final AnalysisEvents events;
 
     @Transactional
     public AnalysisNode addNode(Long jobId, AnalysisNodeKind kind, String title, String body, Map<String, Object> props) {
-        return nodeRepository.save(AnalysisNode.builder()
+        AnalysisNode node = nodeRepository.save(AnalysisNode.builder()
                 .jobId(jobId)
                 .kind(kind)
                 .title(title)
                 .body(body)
                 .props(jsonMapper.writeValueAsString(props))
                 .build());
+        events.changed(jobId, "node");
+        return node;
     }
 
     @Transactional
@@ -111,6 +114,7 @@ public class AnalysisGraphService {
         Map<String, Object> props = new LinkedHashMap<>(jsonMapper.readValue(finding.getProps(), JSON_OBJECT));
         props.put("verification", verification);
         finding.applyVerdict(status, jsonMapper.writeValueAsString(props));
+        events.changed(jobId, "verdict");
         return true;
     }
 
@@ -127,6 +131,7 @@ public class AnalysisGraphService {
         Map<String, Object> props = new LinkedHashMap<>(jsonMapper.readValue(finding.getProps(), JSON_OBJECT));
         props.put("review", review);
         finding.updateProps(jsonMapper.writeValueAsString(props));
+        events.changed(jobId, "review");
         return finding;
     }
 
@@ -151,6 +156,7 @@ public class AnalysisGraphService {
         Map<String, Object> props = new LinkedHashMap<>(props(node));
         change.accept(props);
         node.updateProps(jsonMapper.writeValueAsString(props));
+        events.changed(node.getJobId(), "node");
         return props;
     }
 
@@ -165,16 +171,25 @@ public class AnalysisGraphService {
         for (int changed = nodeRepository.failBlockedIntentions(jobId); changed > 0; changed = nodeRepository.failBlockedIntentions(jobId)) {
             total += changed;
         }
+        if (total > 0) {
+            events.changed(jobId, "node");
+        }
         return total;
     }
 
     @Transactional
     public void complete(Long nodeId) {
-        nodeRepository.findById(nodeId).ifPresent(AnalysisNode::complete);
+        nodeRepository.findById(nodeId).ifPresent(node -> {
+            node.complete();
+            events.changed(node.getJobId(), "node");
+        });
     }
 
     @Transactional
     public void fail(Long nodeId) {
-        nodeRepository.findById(nodeId).ifPresent(AnalysisNode::fail);
+        nodeRepository.findById(nodeId).ifPresent(node -> {
+            node.fail();
+            events.changed(node.getJobId(), "node");
+        });
     }
 }

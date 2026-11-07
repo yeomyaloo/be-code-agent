@@ -20,7 +20,7 @@ Java/Spring 소스코드를 정적 파싱해 코드 그래프를 만들고, Clau
 | 패키지 | 역할 |
 |---|---|
 | `codegraph` | 소스 파싱 → 코드 그래프 (LLM 사용 안 함). `ingest/` 생성, `query/` 조회 |
-| `analysisgraph` | 분석 그래프 (GOAL/INTENTION/FACT/FINDING), anchor, worker_trace |
+| `analysisgraph` | 분석 그래프 (GOAL/INTENTION/FACT/FINDING), anchor, worker_trace, `AnalysisEvents`(SSE: 그래프·기록이 바뀌면 change, 작업이 끝나면 finished. 쓰기 경로에서 `events.changed()` 를 부른다) |
 | `agent` | `AgentLoop`(Claude 도구 호출 반복), 프롬프트(Planner·Worker·Verifier), `tool/` 도구 (Worker 8, Planner 전용 5, Verifier 판정 1) |
 | `orchestrator` | `AnalysisService`(Planner 회차 ↔ Worker 실행 반복, `PlannerMode` llm/paths), `VerificationService`(발견 재검증) |
 | `llm` | Anthropic 클라이언트, 역할별 모델 설정 |

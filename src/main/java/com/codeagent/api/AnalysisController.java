@@ -1,5 +1,6 @@
 package com.codeagent.api;
 
+import com.codeagent.analysisgraph.AnalysisEvents;
 import com.codeagent.analysisgraph.AnalysisGraphService;
 import com.codeagent.analysisgraph.domain.AnalysisNode;
 import com.codeagent.analysisgraph.domain.AnalysisNodeKind;
@@ -13,6 +14,7 @@ import com.codeagent.orchestrator.AnalysisService;
 import com.codeagent.orchestrator.PlannerMode;
 import com.codeagent.project.AnalysisJob;
 import com.codeagent.project.AnalysisJobRepository;
+import com.codeagent.project.JobStatus;
 import com.codeagent.project.ProjectRepository;
 import com.codeagent.report.HtmlReportWriter;
 import com.codeagent.report.ReportService;
@@ -33,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -59,6 +62,7 @@ public class AnalysisController {
     private final AnalysisGraphService analysisGraph;
     private final ReportService reportService;
     private final AgentProperties agentProperties;
+    private final AnalysisEvents analysisEvents;
 
     /**
      * @param maxIntentions 할 일 수 상한 (경로 계획이면 조사할 경로 수). 생략하면 LLM 계획 10, 경로 계획 5
@@ -152,6 +156,23 @@ public class AnalysisController {
             }
             return new JobSummaryView(JobView.from(job), intentions, intentionsFinished, findings);
         }).toList();
+    }
+
+    /**
+     * 작업의 변화를 실시간으로 받는다 (Server-Sent Events).
+     * 이벤트: ready(연결됨) → change(분석 그래프·기록이 바뀜, data 는 node/trace/verdict/review/job) → finished(끝남, 연결 닫힘).
+     * 이벤트를 받으면 GET /api/analyses/{jobId}, /traces 를 다시 불러온다. 이미 끝난 작업이면 ready·finished 를 보내고 닫는다.
+     */
+    @GetMapping(value = "/api/analyses/{jobId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public ResponseEntity<SseEmitter> events(@PathVariable Long jobId) {
+        AnalysisJob job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new NoSuchElementException("분석 작업 없음: " + jobId));
+        boolean finished = job.getStatus() != JobStatus.PENDING && job.getStatus() != JobStatus.RUNNING;
+        return ResponseEntity.ok()
+                // nginx 같은 리버스 프록시가 이벤트를 모아 두지 않고 바로 흘려보내게 한다 (Docker 의 웹 화면)
+                .header("X-Accel-Buffering", "no")
+                .header(HttpHeaders.CACHE_CONTROL, "no-cache")
+                .body(analysisEvents.subscribe(jobId, job.getStatus().name(), finished));
     }
 
     @GetMapping("/api/analyses/{jobId}")

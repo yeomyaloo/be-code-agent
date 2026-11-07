@@ -18,6 +18,7 @@ import com.codeagent.agent.tool.AgentTool;
 import com.codeagent.agent.tool.ToolContext;
 import com.codeagent.agent.tool.ToolInput;
 import com.codeagent.agent.tool.ToolInputException;
+import com.codeagent.analysisgraph.AnalysisEvents;
 import com.codeagent.analysisgraph.domain.WorkerTrace;
 import com.codeagent.analysisgraph.domain.WorkerTraceRepository;
 import com.codeagent.llm.LlmProperties;
@@ -49,13 +50,15 @@ public class AgentLoop {
     private final LlmProperties llmProperties;
     private final WorkerTraceRepository traceRepository;
     private final JsonMapper jsonMapper;
+    private final AnalysisEvents events;
 
     public AgentLoop(@Lazy AnthropicClient client, LlmProperties llmProperties,
-                     WorkerTraceRepository traceRepository, JsonMapper jsonMapper) {
+                     WorkerTraceRepository traceRepository, JsonMapper jsonMapper, AnalysisEvents events) {
         this.client = client;
         this.llmProperties = llmProperties;
         this.traceRepository = traceRepository;
         this.jsonMapper = jsonMapper;
+        this.events = events;
     }
 
     public record AgentRequest(ModelTier tier, String systemPrompt, String userPrompt, List<AgentTool> tools,
@@ -234,6 +237,7 @@ public class AgentLoop {
                     .toolName(toolName)
                     .content(trimmed)
                     .build());
+            events.changed(context.jobId(), "trace");
         }
     }
 }

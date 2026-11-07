@@ -149,8 +149,9 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 5-2 | LLM Planner (multi-round planning, checks without paths, DEPENDS_ON ordering, cascading failures) | ✅ Done (real API calls to be verified once an API key is registered) |
 | 6 | Finding verification (Verifier, false positive removal) | ✅ Done (real API calls to be verified once an API key is registered) |
 | 7 | Reports (SARIF 2.1.0, HTML), human review API | ✅ Done |
-| 8 | Web UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent), progress via 2-second polling) | ✅ Done |
-| 8-1 | Real-time progress (SSE), human approval step | ⬜ Planned |
+| 8 | Web UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)) | ✅ Done |
+| 8-1 | Real-time progress (SSE, falls back to 2-second polling) | ✅ Done |
+| 8-2 | Human approval step | ⬜ Planned |
 | 9 | One-click Docker Compose setup (PostgreSQL + backend + web UI), checked on GitHub Actions | ✅ Done |
 
 ---
@@ -366,6 +367,7 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 | `GET /api/analyses/{jobId}/report.sarif?includeDismissed=` | SARIF 2.1.0 report file |
 | `GET /api/analyses/{jobId}/report.html?includeDismissed=` | HTML report (open in a browser) |
 | `GET /api/analyses/{jobId}/traces?intentionId=` | Analysis traces (Claude responses, tool calls and results). Filter Planner traces by the GOAL id, Worker traces by the task id, Verifier traces by the finding id |
+| `GET /api/analyses/{jobId}/events` | Real-time events (Server-Sent Events): `ready` on connect, `change` when the analysis graph or traces change (data: `node` / `trace` / `verdict` / `review` / `job`), `finished` when the job ends (then the stream closes). On `change`, re-fetch the job and traces. A finished job gets `ready` + `finished` and closes |
 
 For each task, a "task #N conclusion" FACT node holds the Worker's final verdict and tokens used, and the Planner leaves a "planning round N conclusion" FACT for each round. To see only confirmed vulnerabilities, use `findings?status=CONFIRMED`.
 The code graph must be built first. `paths` returns 400 if there is not a single entry point → sink path. `llm` plans authorization issues and the like as long as there are entry points, even without paths.
@@ -546,7 +548,8 @@ be-code-agent/
 │   │   └── query/CodeGraphQuery.java                queries, recursive CTE path search
 │   ├── analysisgraph/
 │   │   ├── domain/                                  AnalysisNode/Edge, Anchor, WorkerTrace
-│   │   └── AnalysisGraphService.java                records analysis graph nodes, edges and anchors
+│   │   ├── AnalysisGraphService.java                records analysis graph nodes, edges and anchors
+│   │   └── AnalysisEvents.java                      real-time events (SSE) when a job changes or finishes
 │   ├── llm/                                         LLM settings (LlmProperties, AgentProperties), Anthropic client
 │   ├── agent/
 │   │   ├── AgentLoop.java                           tool call loop (Claude ↔ tools)
@@ -760,8 +763,9 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 5-2 | LLM Planner (여러 회차 계획, 경로 없는 점검 계획, DEPENDS_ON 순서, 실패 연쇄 처리) | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
 | 6 | 발견 검증(Verifier, 오탐 제거) | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
 | 7 | 보고서 (SARIF 2.1.0, HTML), 사람 검토 API | ✅ 완료 |
-| 8 | 웹 UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent), 진행 상황은 2초 폴링) | ✅ 완료 |
-| 8-1 | 실시간 진행 상황(SSE), 사람 승인 단계 | ⬜ 예정 |
+| 8 | 웹 UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)) | ✅ 완료 |
+| 8-1 | 실시간 진행 상황 (SSE, 끊기면 2초 폴링) | ✅ 완료 |
+| 8-2 | 사람 승인 단계 | ⬜ 예정 |
 | 9 | Docker Compose 원클릭 실행 (PostgreSQL + 백엔드 + 웹 화면), GitHub Actions로 확인 | ✅ 완료 |
 
 ---
@@ -977,6 +981,7 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 | `GET /api/analyses/{jobId}/report.sarif?includeDismissed=` | SARIF 2.1.0 보고서 파일 |
 | `GET /api/analyses/{jobId}/report.html?includeDismissed=` | HTML 보고서 (브라우저로 열기) |
 | `GET /api/analyses/{jobId}/traces?intentionId=` | 분석 기록 (Claude 응답, 도구 호출·결과). Planner 기록은 목표(GOAL) id, Worker 기록은 할 일 id, Verifier 기록은 발견 id로 거른다 |
+| `GET /api/analyses/{jobId}/events` | 실시간 이벤트 (Server-Sent Events). 연결되면 `ready`, 분석 그래프나 기록이 바뀌면 `change`(data: `node` / `trace` / `verdict` / `review` / `job`), 작업이 끝나면 `finished`를 보내고 연결을 닫는다. `change`를 받으면 작업과 기록을 다시 불러온다. 이미 끝난 작업은 `ready`·`finished`를 보내고 닫는다 |
 
 할 일마다 "할 일 #N 결론" FACT 노드에 Worker의 최종 판정과 사용 토큰이 남고, Planner는 회차마다 "계획 N회차 결론" FACT를 남긴다. 확정된 취약점만 보려면 `findings?status=CONFIRMED`.
 코드 그래프를 먼저 만들어야 한다. `paths`는 진입점 → 위험 지점 경로가 하나도 없으면 400을 돌려준다. `llm`은 경로가 없어도 진입점이 있으면 권한 문제 등을 계획한다.
@@ -1157,7 +1162,8 @@ be-code-agent/
 │   │   └── query/CodeGraphQuery.java                조회, 재귀 CTE 경로 탐색
 │   ├── analysisgraph/
 │   │   ├── domain/                                  AnalysisNode/Edge, Anchor, WorkerTrace
-│   │   └── AnalysisGraphService.java                분석 그래프 노드·연결선·연결점 기록
+│   │   ├── AnalysisGraphService.java                분석 그래프 노드·연결선·연결점 기록
+│   │   └── AnalysisEvents.java                      작업이 바뀌거나 끝나면 실시간 이벤트(SSE) 전송
 │   ├── llm/                                         LLM 설정(LlmProperties, AgentProperties), Anthropic 클라이언트
 │   ├── agent/
 │   │   ├── AgentLoop.java                           도구 호출 반복 흐름 (Claude ↔ 도구)

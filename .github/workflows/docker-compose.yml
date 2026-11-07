@@ -62,6 +62,22 @@ jobs:
           test "$(jq .sinks index.json)" -eq 7
           test "$(jq .entryPoints index.json)" -eq 5
           test "$(curl -fsS "http://localhost:3000/api/projects/$id/code-graph/sink-paths" | jq 'length')" -ge 1
+          echo "PROJECT_ID=$id" >> "$GITHUB_ENV"
+
+      - name: 실시간 이벤트(SSE)가 nginx 를 거쳐 오는지
+        # API 키가 없으므로 분석 작업은 곧 실패로 끝난다. 끝난 작업에 연결하면 ready·finished 가 와야 한다
+        run: |
+          job=$(curl -fsS -X POST "http://localhost:3000/api/projects/$PROJECT_ID/analyses" -H 'Content-Type: application/json' \
+                  -d '{"planner":"paths","maxIntentions":1,"budgetTokens":10000}' | jq -r .id)
+          for i in $(seq 1 30); do
+            status=$(curl -fsS "http://localhost:3000/api/analyses/$job" | jq -r .job.status)
+            [ "$status" != "RUNNING" ] && [ "$status" != "PENDING" ] && break
+            sleep 2
+          done
+          echo "job $job: $status"
+          curl -fsS -N --max-time 15 -H 'Accept: text/event-stream' "http://localhost:3000/api/analyses/$job/events" | tee events.txt
+          grep -q "ready" events.txt
+          grep -q "finished" events.txt
 
       - name: 실패하면 로그 보기
         if: failure()

@@ -13,6 +13,7 @@ import com.codeagent.agent.tool.GetPlanTool;
 import com.codeagent.agent.tool.ListEntryPointsTool;
 import com.codeagent.agent.tool.ListSinkPathsTool;
 import com.codeagent.agent.tool.ToolContext;
+import com.codeagent.analysisgraph.AnalysisEvents;
 import com.codeagent.analysisgraph.AnalysisGraphService;
 import com.codeagent.analysisgraph.domain.AnalysisEdgeKind;
 import com.codeagent.analysisgraph.domain.AnalysisNode;
@@ -83,13 +84,14 @@ public class AnalysisService {
     private final List<AgentTool> workerTools;
     private final List<AgentTool> plannerTools;
     private final AgentProperties agentProperties;
+    private final AnalysisEvents events;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     public AnalysisService(ProjectRepository projectRepository, AnalysisJobRepository jobRepository,
                            AnalysisNodeRepository nodeRepository, AnalysisGraphService analysisGraph,
                            CodeGraphQuery codeGraphQuery, AgentLoop agentLoop,
                            VerificationService verificationService, List<AgentTool> allTools,
-                           AgentProperties agentProperties) {
+                           AgentProperties agentProperties, AnalysisEvents events) {
         this.projectRepository = projectRepository;
         this.jobRepository = jobRepository;
         this.nodeRepository = nodeRepository;
@@ -100,6 +102,7 @@ public class AnalysisService {
         this.workerTools = allTools.stream().filter(t -> WORKER_TOOLS.contains(t.name())).toList();
         this.plannerTools = allTools.stream().filter(t -> PLANNER_TOOLS.contains(t.name())).toList();
         this.agentProperties = agentProperties;
+        this.events = events;
     }
 
     /**
@@ -304,6 +307,7 @@ public class AnalysisService {
         Project project = projectRepository.findById(job.getProject().getId()).orElseThrow();
         job.resume();
         jobRepository.save(job);
+        events.changed(jobId, "job");
         executor.submit(() -> {
             try {
                 runVerification(jobId, project.getId(), Path.of(project.getRepoPath()));
@@ -366,6 +370,7 @@ public class AnalysisService {
 
     private void finish(Long jobId, JobStatus status, String error) {
         jobRepository.finish(jobId, status, error, OffsetDateTime.now());
+        events.finished(jobId, status.name());
         log.info("분석 작업 #{} 종료: {} {}", jobId, status, error == null ? "" : error);
     }
 
