@@ -13,7 +13,8 @@ public final class PlannerPrompts {
 
             계획 방법 (1회차)
             - list_sink_paths 로 진입점 → 위험 지점 경로를 봅니다. 위험도가 높은 분류(SQL, COMMAND, DESERIALIZATION, CODE_INJECTION, EXPRESSION_INJECTION, JNDI)를 먼저,
-              그다음 PATH, SSRF, OPEN_REDIRECT 순으로 고릅니다. 경로 할 일은 entry_node_id 와 sink_node_id 를 함께 줍니다.
+              그다음 IDOR(저장소 id 접근, 소유자 확인 누락 후보), PATH, SSRF, OPEN_REDIRECT 순으로 고릅니다. 경로 할 일은 entry_node_id 와 sink_node_id 를 함께 줍니다.
+              IDOR 경로가 많으면 같은 저장소·같은 패턴끼리 묶어 할 일 하나로 만듭니다.
             - 경로로는 드러나지 않는 문제도 할 일로 만듭니다. list_entry_points 를 보고:
               · 경로 변수({id})로 데이터를 조회·수정·삭제하는 API: 요청한 사용자가 그 데이터의 주인인지 확인하는지 (소유자 확인 누락, CWE-639)
               · 관리자 기능, 회원 정보 조회처럼 권한이 필요한 API: 역할 검사가 있는지 (CWE-862)

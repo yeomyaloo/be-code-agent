@@ -78,6 +78,29 @@ public final class SinkRules {
             rule("javax.servlet.http.HttpServletResponse", "OPEN_REDIRECT", "CWE-601", "sendRedirect")
     );
 
+    /** 이 타입을 상속하는 프로젝트 인터페이스를 Spring Data 저장소로 본다 */
+    public static final Set<String> REPOSITORY_TYPES = Set.of(
+            "org.springframework.data.repository.Repository",
+            "org.springframework.data.repository.CrudRepository",
+            "org.springframework.data.repository.ListCrudRepository",
+            "org.springframework.data.repository.PagingAndSortingRepository",
+            "org.springframework.data.repository.ListPagingAndSortingRepository",
+            "org.springframework.data.jpa.repository.JpaRepository",
+            "org.springframework.data.mongodb.repository.MongoRepository");
+
+    /**
+     * id 하나로 데이터를 꺼내거나 지우는 저장소 메서드. 요청한 사용자가 그 데이터의 주인인지 확인하지 않으면
+     * 남의 데이터를 읽거나 지울 수 있다 (IDOR). findByIdAndUser 처럼 주인 조건이 붙은 쿼리는 여기에 없다.
+     */
+    private static final Set<String> ID_ACCESS_METHODS = Set.of("findById", "getById", "getReferenceById", "getOne", "deleteById");
+
+    /** Spring Data 저장소의 id 접근 호출이면 IDOR 후보 위험 지점 규칙 */
+    public static Optional<SinkRule> repositoryIdAccess(String repositoryFqn, String method) {
+        return ID_ACCESS_METHODS.contains(method)
+                ? Optional.of(new SinkRule(repositoryFqn, ID_ACCESS_METHODS, "IDOR", "CWE-639"))
+                : Optional.empty();
+    }
+
     private SinkRules() {
     }
 

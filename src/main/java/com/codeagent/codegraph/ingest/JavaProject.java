@@ -76,6 +76,18 @@ public class JavaProject {
         return fqn != null && types.containsKey(fqn);
     }
 
+    /** 프로젝트 인터페이스가 (직접 또는 프로젝트 안의 상위 인터페이스를 거쳐) Spring Data 저장소를 상속하는지 */
+    public boolean isSpringDataRepository(String fqn) {
+        TypeInfo type = fqn == null ? null : types.get(fqn);
+        if (type == null) {
+            return false;
+        }
+        List<TypeInfo> lineage = new ArrayList<>();
+        lineage.add(type);
+        lineage.addAll(ancestors(type));
+        return lineage.stream().flatMap(t -> t.superTypes().stream()).anyMatch(SinkRules.REPOSITORY_TYPES::contains);
+    }
+
     public List<String> parseErrors() {
         return parseErrors;
     }

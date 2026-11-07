@@ -62,7 +62,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 - **Source-only analysis, no library jars**: types are inferred from import statements and variable/field declarations, falling back to the JavaParser symbol solver. Repositories can be analyzed without building them.
 - **Structure extraction**: builds the file → class → method hierarchy and inheritance links (interface method → implementing method).
 - **HTTP entry point detection**: reads `@GetMapping`, `@PostMapping`, `@RequestMapping` etc. in `@RestController`/`@Controller` classes and normalizes them to the form `GET /api/users/search`. Class-level paths, multiple paths and `method = {GET, HEAD}` are handled.
-- **Sink detection**: about 30 rules in 9 categories find calls to dangerous APIs.
+- **Sink detection**: about 30 rules in 9 categories find calls to dangerous APIs, plus **IDOR candidates**: id-based access through Spring Data repositories (see the table).
 
   | Category | CWE | Typical APIs |
   |---|---|---|
@@ -75,6 +75,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
   | EXPRESSION_INJECTION | CWE-917 | `SpelExpressionParser.parseExpression` |
   | JNDI | CWE-74 | `InitialContext.lookup` |
   | OPEN_REDIRECT | CWE-601 | `HttpServletResponse.sendRedirect` |
+  | IDOR | CWE-639 | `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById` on project interfaces that extend a Spring Data repository (`JpaRepository`, `CrudRepository`, … directly or through a project base interface). Owner-scoped queries such as `findByIdAndUser` are not flagged. These are candidates: the worker checks whether the code compares the requesting user with the data owner |
 
 - **Entry point → sink path search**: a PostgreSQL recursive CTE extracts "which API reaches which sink through which methods". Calls through interfaces are followed too.
 
@@ -140,6 +141,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 1 | Project skeleton, DB schema (code graph + analysis graph) | ✅ Done |
 | 1-1 | Register repositories by Git URL (public repositories, shallow clone), sync, SSRF and symlink blocking | ✅ Done |
 | 2 | Code graph construction (Java/Spring parsing, entry points, sinks, call edges) | ✅ Done |
+| 2-1 | IDOR candidates: id-based Spring Data repository access as sinks (CWE-639) | ✅ Done |
 | 3 | Code graph query API (entry points, sinks, call paths, callers/callees) | ✅ Done |
 | 4 | LLM integration (Anthropic Java SDK), 8 Worker tools, Worker agent loop | ✅ Done (real API calls to be verified once an API key is registered) |
 | 5 | Shared task list (`SKIP LOCKED`) and analysis job API | ✅ Done |
@@ -670,7 +672,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 - **라이브러리 jar 없이 소스만으로 분석**: import 문과 변수·필드 선언으로 타입을 알아내고, 안 되면 JavaParser symbol solver에 맡긴다. 빌드하지 않은 저장소도 바로 분석할 수 있다.
 - **구조 추출**: 파일 → 클래스 → 메서드 계층과 상속 관계(인터페이스 메서드 → 구현 메서드)를 만든다.
 - **HTTP 진입점 탐지**: `@RestController`/`@Controller`의 `@GetMapping`·`@PostMapping`·`@RequestMapping` 등을 읽어 `GET /api/users/search` 형태로 정리한다. 클래스 레벨 경로, 여러 경로, `method = {GET, HEAD}`도 처리한다.
-- **위험 지점(Sink) 탐지**: 9개 분류 30여 개 규칙으로 위험한 API 호출 위치를 찾는다.
+- **위험 지점(Sink) 탐지**: 9개 분류 30여 개 규칙으로 위험한 API 호출 위치를 찾는다. 여기에 더해 Spring Data 저장소의 id 접근을 **IDOR 후보**로 잡는다 (표 참고).
 
   | 분류 | CWE | 대표 API |
   |---|---|---|
@@ -683,6 +685,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
   | EXPRESSION_INJECTION | CWE-917 | `SpelExpressionParser.parseExpression` |
   | JNDI | CWE-74 | `InitialContext.lookup` |
   | OPEN_REDIRECT | CWE-601 | `HttpServletResponse.sendRedirect` |
+  | IDOR | CWE-639 | Spring Data 저장소(`JpaRepository`, `CrudRepository` 등, 직접 또는 프로젝트 안의 상위 인터페이스를 거쳐 상속)의 `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById`. `findByIdAndUser`처럼 주인 조건이 붙은 쿼리는 잡지 않는다. 후보일 뿐이고, 요청한 사용자와 데이터 소유자를 비교하는지는 Worker가 코드를 읽고 판단한다 |
 
 - **진입점 → 위험 지점 경로 탐색**: PostgreSQL 재귀 CTE로 "어느 API에서 어느 위험 지점까지 어떤 메서드들을 거쳐 도달하는지"를 뽑는다. 인터페이스를 거치는 호출도 따라간다.
 
@@ -748,6 +751,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 1 | 프로젝트 뼈대, DB 스키마 (코드 그래프 + 분석 그래프) | ✅ 완료 |
 | 1-1 | Git 주소로 저장소 등록(공개 저장소, 얕은 클론), 동기화, SSRF·심볼릭 링크 차단 | ✅ 완료 |
 | 2 | 코드 그래프 생성 (Java/Spring 파싱, 진입점·위험 지점·호출 관계) | ✅ 완료 |
+| 2-1 | IDOR 후보: Spring Data 저장소의 id 접근을 위험 지점으로 (CWE-639) | ✅ 완료 |
 | 3 | 코드 그래프 조회 API (진입점, 위험 지점, 호출 경로, 호출자/피호출자) | ✅ 완료 |
 | 4 | LLM 연동(Anthropic Java SDK), Worker 도구 8개, Worker 에이전트 루프 | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
 | 5 | 공유 할 일 목록(`SKIP LOCKED`)과 분석 작업 API | ✅ 완료 |

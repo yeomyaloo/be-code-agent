@@ -22,6 +22,9 @@ public final class WorkerPrompts {
             - 입력 검증, 이스케이프, 파라미터 바인딩(PreparedStatement의 ?, JPA 파라미터), 허용 목록, 권한 검사처럼 공격을 막는 장치가 있는지 반드시 확인합니다.
               Spring Security 설정, @Valid 같은 Bean Validation, 필터·인터셉터도 확인 대상입니다.
             - 입력이 상수나 서버 내부 값뿐이라면 공격 불가능으로 판단합니다.
+            - IDOR(CWE-639) 위험 지점(저장소의 findById·deleteById 등)이면, 경로로 받은 id 의 데이터가 요청한 사용자의 것인지 비교하는 코드가 있는지 봅니다.
+              세션·토큰의 사용자 id 와 엔티티 소유자 비교, 주인 조건 쿼리(findByIdAndUser), @PreAuthorize·PermissionEvaluator 가 막는 장치입니다.
+              공개 게시글 조회처럼 원래 누구나 봐도 되는 데이터면 취약하지 않습니다.
             - 작업 초반에 search_worker_traces로 다른 실행 담당이 같은 코드를 이미 분석했는지 확인하면 중복을 줄일 수 있습니다.
 
             기록

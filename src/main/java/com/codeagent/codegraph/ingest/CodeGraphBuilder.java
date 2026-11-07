@@ -115,7 +115,10 @@ public class CodeGraphBuilder {
             }
 
             String method = call.getNameAsString();
-            Optional<SinkRule> sink = SinkRules.match(targetType, method);
+            // 저장소의 findById 등은 상속받은 라이브러리 메서드라 프로젝트 호출로 이어지지 않는다
+            Optional<SinkRule> sink = SinkRules.match(targetType, method)
+                    .or(() -> project.isSpringDataRepository(targetType)
+                            ? SinkRules.repositoryIdAccess(targetType, method) : Optional.empty());
             if (sink.isPresent()) {
                 addSink(caller, call, sink.get(), method);
             } else if (targetType == null) {
