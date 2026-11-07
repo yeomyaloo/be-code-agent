@@ -149,10 +149,36 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 7 | Reports (SARIF 2.1.0, HTML), human review API | ✅ Done |
 | 8 | Web UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent), progress via 2-second polling) | ✅ Done |
 | 8-1 | Real-time progress (SSE), human approval step | ⬜ Planned |
+| 9 | One-click Docker Compose setup (PostgreSQL + backend + web UI), checked on GitHub Actions | ✅ Done |
 
 ---
 
 ## Installation
+
+### Quick start with Docker (recommended)
+
+All you need is [Docker](https://docs.docker.com/get-docker/). One command starts PostgreSQL, this backend and the web UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent), built straight from GitHub).
+
+```bash
+git clone https://github.com/yeomyaloo/be-code-agent.git
+cd be-code-agent
+cp .env.example .env          # put your ANTHROPIC_API_KEY in .env
+docker compose up -d --build
+```
+
+Open **http://localhost:3000**. Stop with `docker compose down` (add `-v` to also delete the database).
+
+| `.env` | Default | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | (empty) | Needed for agent analysis only. Registering repositories and building code graphs work without it |
+| `WEB_PORT` / `API_PORT` | `3000` / `8080` | Ports, bound to `127.0.0.1` (this computer only) |
+| `LOCAL_REPOS_DIR` | `./repos` | Folder mounted read-only at `/repos`. Register a local repository with the server path `/repos/<folder>` |
+| `DB_PASSWORD` | `codeagent` | PostgreSQL password, used only inside the containers |
+| `WEB_SOURCE` | fe-code-agent on GitHub | Web UI source. Set a local path (e.g. `../fe-code-agent`) to use your own changes |
+
+Every push that touches the Docker setup is checked by [GitHub Actions](.github/workflows/docker-compose.yml): it runs `docker compose up`, then registers the test fixture through the web UI's proxy and builds its code graph.
+
+The steps below are for running from source without Docker.
 
 ### Requirements
 
@@ -497,6 +523,8 @@ Stop conditions: the Planner calls `finish_planning` or creates no new tasks, th
 ```
 be-code-agent/
 ├── build.gradle, settings.gradle, gradlew          Gradle build
+├── Dockerfile, docker-compose.yml, .env.example    One-click Docker Compose setup
+├── .github/workflows/docker-compose.yml            Checks the Docker setup on GitHub Actions
 ├── src/main/java/com/codeagent/
 │   ├── CodeAgentApplication.java                    entry point
 │   ├── project/                                     repositories under analysis (Project), analysis jobs (AnalysisJob)
@@ -729,10 +757,36 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 7 | 보고서 (SARIF 2.1.0, HTML), 사람 검토 API | ✅ 완료 |
 | 8 | 웹 UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent), 진행 상황은 2초 폴링) | ✅ 완료 |
 | 8-1 | 실시간 진행 상황(SSE), 사람 승인 단계 | ⬜ 예정 |
+| 9 | Docker Compose 원클릭 실행 (PostgreSQL + 백엔드 + 웹 화면), GitHub Actions로 확인 | ✅ 완료 |
 
 ---
 
 ## 설치
+
+### Docker로 한 번에 실행 (추천)
+
+[Docker](https://docs.docker.com/get-docker/)만 있으면 된다. 명령 한 줄로 PostgreSQL, 이 백엔드, 웹 화면([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent), GitHub에서 바로 받아 빌드)이 함께 뜬다.
+
+```bash
+git clone https://github.com/yeomyaloo/be-code-agent.git
+cd be-code-agent
+cp .env.example .env          # .env 에 ANTHROPIC_API_KEY 넣기
+docker compose up -d --build
+```
+
+**http://localhost:3000** 을 연다. 끄려면 `docker compose down` (DB까지 지우려면 `-v`).
+
+| `.env` | 기본값 | 설명 |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | (비어 있음) | 에이전트 분석에만 필요하다. 저장소 등록과 코드 그래프 생성은 없어도 된다 |
+| `WEB_PORT` / `API_PORT` | `3000` / `8080` | 포트. `127.0.0.1`(이 컴퓨터)에서만 열린다 |
+| `LOCAL_REPOS_DIR` | `./repos` | `/repos`에 읽기 전용으로 연결되는 폴더. 로컬 저장소는 서버 폴더 경로 `/repos/<폴더>`로 등록한다 |
+| `DB_PASSWORD` | `codeagent` | PostgreSQL 비밀번호. 컨테이너 안에서만 쓰인다 |
+| `WEB_SOURCE` | GitHub의 fe-code-agent | 웹 화면 소스. 직접 고친 프론트를 쓰려면 로컬 경로(예: `../fe-code-agent`)로 바꾼다 |
+
+Docker 설정을 바꾸는 푸시마다 [GitHub Actions](.github/workflows/docker-compose.yml)가 확인한다: `docker compose up` 후 웹 화면의 프록시를 거쳐 테스트용 앱을 등록하고 코드 그래프를 만든다.
+
+아래는 Docker 없이 소스에서 직접 실행하는 방법이다.
 
 ### 요구 사항
 
@@ -1077,6 +1131,8 @@ ARTEX의 "Planner 여러 회차 + 공유 할 일 목록 + Worker 병렬 실행" 
 ```
 be-code-agent/
 ├── build.gradle, settings.gradle, gradlew          Gradle 빌드
+├── Dockerfile, docker-compose.yml, .env.example    Docker Compose 원클릭 실행
+├── .github/workflows/docker-compose.yml            GitHub Actions 로 Docker 실행 확인
 ├── src/main/java/com/codeagent/
 │   ├── CodeAgentApplication.java                    진입점
 │   ├── project/                                     분석 대상 저장소(Project), 분석 작업(AnalysisJob)
