@@ -379,12 +379,13 @@ The code graph must be built first. `paths` returns 400 if there is not a single
 ./gradlew build     # build
 ```
 
+- **Test database**: tests run with the `test` profile and use a separate `codeagent_test` schema in the same database, so your development data (`public` schema) is never touched. The schema is created by Flyway and wiped at the start of each test context. Point to another database with `TEST_DB_URL`.
 - `CodeGraphBuilderTest` runs without a DB. It parses a deliberately vulnerable sample app (`src/test/resources/fixtures/vulnerable-app`) and checks entry points, sinks, inheritance links and reachable paths.
 - `FileToolsTest` runs without a DB. It checks range reads of the `read_file` and `grep_code` tools, blocking of paths and symlinks outside the repository, and input error handling.
 - `GitUrlPolicyTest` and `GitClonerTest` run without a DB or network. They check that disallowed URLs (http, file://, credentials, internal IPs, etc.) are refused, and test shallow clone, branch selection and the size limit against a remote repository created locally. The symlink test is skipped where the environment has no permission to create links (a regular Windows account).
 - `CodeAgentApplicationTests` starts the Spring context, so PostgreSQL must be running.
 - `CodeGraphReindexTest` copies the sample app to a temporary folder, edits and deletes files, and checks rebuilding (node ids kept, anchors preserved, removed nodes cleaned up). Requires PostgreSQL.
-- `AnalysisFlowTest` uses a fake `AgentLoop` that calls the tools directly instead of real Claude, and checks the flow task creation → distribution → recording facts and findings → verification verdicts (confirmed, false positive, no verdict submitted) → job end, plus the Worker and Verifier tool sets and re-running verification. It needs no API key but needs PostgreSQL, and **leaves test data (projects, analysis jobs) in the local `codeagent` DB.**
+- `AnalysisFlowTest` uses a fake `AgentLoop` that calls the tools directly instead of real Claude, and checks the flow task creation → distribution → recording facts and findings → verification verdicts (confirmed, false positive, no verdict submitted) → job end, plus the Worker and Verifier tool sets and re-running verification. It needs no API key but needs PostgreSQL.
 - `PlannerFlowTest` checks the LLM planning flow the same way: planning round 1 (path tasks + authorization checks without paths, DEPENDS_ON, rejecting duplicates and invalid nodes) → Worker execution order → round 2 (reading conclusions with get_plan, follow-ups, rejecting going over the limit, finish_planning) → round 3 skipped, and cascading failure when a prerequisite fails.
 - **Adding a tool**: create a `@Component` implementing `agent/tool/AgentTool`, and add its name to the tool list of each role that uses it (`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`). For invalid input, throw `ToolInputException`; it is passed to Claude as an error so it can retry.
 - **Adding a sink rule**: add `rule(type FQN, category, CWE, methods...)` to `RULES` in `codegraph/ingest/SinkRules.java`. Write constructors as the method name `<init>`.
@@ -989,12 +990,13 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 ./gradlew build     # 빌드
 ```
 
+- **테스트 DB**: 테스트는 `test` 프로필로 돌고, 같은 DB 안의 `codeagent_test` 스키마를 따로 써서 개발 데이터(`public` 스키마)를 건드리지 않는다. 스키마는 Flyway가 만들고, 테스트용 스프링 컨텍스트가 뜰 때마다 비운다. 다른 DB를 쓰려면 `TEST_DB_URL`.
 - `CodeGraphBuilderTest`는 DB 없이 돈다. 일부러 취약하게 만든 예제 앱(`src/test/resources/fixtures/vulnerable-app`)을 파싱해서 진입점·위험 지점·상속 연결·도달 경로를 검증한다.
 - `FileToolsTest`는 DB 없이 돈다. `read_file`·`grep_code` 도구의 범위 읽기, 저장소 밖 경로·심볼릭 링크 차단, 입력 오류 처리를 검증한다.
 - `GitUrlPolicyTest`, `GitClonerTest`는 DB·네트워크 없이 돈다. 허용하지 않는 주소(http, file://, 계정 정보, 내부망 IP 등) 거부와, 로컬에 만든 원격 저장소로 얕은 클론·브랜치 지정·크기 상한을 검증한다. 심볼릭 링크 테스트는 링크를 만들 권한이 없는 환경(Windows 일반 계정)에서는 건너뛴다.
 - `CodeAgentApplicationTests`는 스프링 컨텍스트를 띄우므로 PostgreSQL이 떠 있어야 한다.
 - `CodeGraphReindexTest`는 예제 앱을 임시 폴더에 복사해서 파일을 고치고 지우며 다시 만들기를 검증한다 (노드 id 유지, 연결점 보존, 사라진 노드 정리). PostgreSQL이 필요하다.
-- `AnalysisFlowTest`는 실제 Claude 대신 가짜 `AgentLoop`가 도구를 직접 호출해서 할 일 생성 → 배분 → 사실·발견 기록 → 검증 판정(확정·오탐·판정 미제출) → 작업 종료 흐름과, Worker·Verifier 도구 구성, 검증 재실행을 검증한다. API 키는 필요 없지만 PostgreSQL이 필요하고, **로컬 `codeagent` DB에 테스트 데이터(프로젝트·분석 작업)를 남긴다.**
+- `AnalysisFlowTest`는 실제 Claude 대신 가짜 `AgentLoop`가 도구를 직접 호출해서 할 일 생성 → 배분 → 사실·발견 기록 → 검증 판정(확정·오탐·판정 미제출) → 작업 종료 흐름과, Worker·Verifier 도구 구성, 검증 재실행을 검증한다. API 키는 필요 없지만 PostgreSQL이 필요하다.
 - `PlannerFlowTest`는 같은 방식으로 LLM 계획 흐름을 검증한다: 계획 1회차(경로 할 일 + 경로 없는 권한 점검, DEPENDS_ON, 중복·잘못된 노드 거절) → Worker 실행 순서 → 2회차(get_plan 으로 결론 확인, 보완, 상한 초과 거절, finish_planning) → 3회차 생략, 선행 할 일 실패 시 연쇄 실패 처리.
 - **도구 추가**: `agent/tool/AgentTool`을 구현한 `@Component`를 만들고, 쓸 역할의 도구 목록(`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`)에 이름을 넣는다. 잘못된 입력은 `ToolInputException`을 던지면 Claude에게 오류로 전달되어 다시 시도하게 된다.
 - **위험 지점 규칙 추가**: `codegraph/ingest/SinkRules.java`의 `RULES`에 `rule(타입 FQN, 분류, CWE, 메서드...)`를 추가한다. 생성자는 메서드 이름 `<init>`으로 적는다.

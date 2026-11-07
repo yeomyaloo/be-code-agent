@@ -40,4 +40,6 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// 테스트는 개발 DB 대신 codeagent_test 스키마를 쓴다 (src/test/resources/application-test.yml)
+	systemProperty 'spring.profiles.active', 'test'
 }
