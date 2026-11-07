@@ -29,7 +29,16 @@ jobs:
           echo "LOCAL_REPOS_DIR=./src/test/resources/fixtures" >> .env
 
       - name: docker compose up
-        run: docker compose up -d --build
+        run: |
+          docker compose config > /dev/null
+          if ! docker compose up -d --build > compose-up.log 2>&1; then
+            cat compose-up.log
+            # 로그는 로그인해야 보이지만 annotation 은 공개로 보이므로 마지막 오류를 남긴다
+            tail -n 40 compose-up.log | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}' | sed 's/^/::error title=docker compose up 실패::/'
+            echo
+            exit 1
+          fi
+          tail -n 20 compose-up.log
 
       - name: 웹 화면과 API 가 뜰 때까지 기다리기
         run: |
