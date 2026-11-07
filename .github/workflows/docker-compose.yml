@@ -1,0 +1,63 @@
+# docker compose 원클릭 실행이 실제로 되는지 GitHub 서버에서 확인한다.
+# PostgreSQL + 백엔드 + 웹 화면을 띄우고, 웹 화면을 거쳐 저장소 등록 → 코드 그래프 생성까지 해 본다 (API 키 불필요).
+name: docker-compose
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - docker-compose.yml
+      - .env.example
+      - .dockerignore
+      - build.gradle
+      - settings.gradle
+      - src/main/**
+      - .github/workflows/docker-compose.yml
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: .env 준비 (테스트용 취약 앱을 /repos 로 연결)
+        run: |
+          cp .env.example .env
+          echo "LOCAL_REPOS_DIR=./src/test/resources/fixtures" >> .env
+
+      - name: docker compose up
+        run: docker compose up -d --build
+
+      - name: 웹 화면과 API 가 뜰 때까지 기다리기
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/api/projects > /dev/null; then echo "ready"; exit 0; fi
+            sleep 5
+          done
+          echo "시간 안에 뜨지 않음"; exit 1
+
+      - name: 웹 화면 (정적 파일, SPA 주소)
+        run: |
+          curl -fsS http://localhost:3000/ | grep -q '<div id="root">'
+          curl -fsS http://localhost:3000/projects/1 | grep -q '<div id="root">'
+
+      - name: 웹 화면을 거쳐 저장소 등록 → 코드 그래프 생성 → 위험 지점 조회
+        run: |
+          id=$(curl -fsS -X POST http://localhost:3000/api/projects -H 'Content-Type: application/json' \
+                 -d '{"name":"vulnerable-app","repoPath":"/repos/vulnerable-app"}' | jq -r .id)
+          echo "project $id"
+          curl -fsS -X POST "http://localhost:3000/api/projects/$id/index" | tee index.json
+          test "$(jq .sinks index.json)" -eq 7
+          test "$(jq .entryPoints index.json)" -eq 5
+          test "$(curl -fsS "http://localhost:3000/api/projects/$id/code-graph/sink-paths" | jq 'length')" -ge 1
+
+      - name: 실패하면 로그 보기
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: 정리
+        if: always()
+        run: docker compose down -v

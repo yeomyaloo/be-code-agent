@@ -1,0 +1,11 @@
+.git
+.gradle
+.idea
+build
+out
+workspace
+repos
+docs
+*.md
+.env
+src/main/resources/application-local.yml

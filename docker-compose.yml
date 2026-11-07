@@ -1,0 +1,58 @@
+# 원클릭 실행: PostgreSQL + 백엔드 + 웹 화면
+#   cp .env.example .env   (ANTHROPIC_API_KEY 채우기)
+#   docker compose up -d --build
+#   → http://localhost:3000
+name: code-agent
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: codeagent
+      POSTGRES_USER: codeagent
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-codeagent}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codeagent -d codeagent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    build: .
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/codeagent
+      DB_USERNAME: codeagent
+      DB_PASSWORD: ${DB_PASSWORD:-codeagent}
+      # 에이전트 분석에만 필요하다. 비어 있어도 저장소 등록·코드 그래프는 된다
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # 아래 /repos 에 마운트한 폴더를 "서버 폴더 경로"로 등록할 수 있다 (예: /repos/my-api)
+      CODEAGENT_ALLOW_LOCAL_PATH: "true"
+    volumes:
+      - workspace:/data/workspace
+      - ${LOCAL_REPOS_DIR:-./repos}:/repos:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    # 백엔드 API 를 직접 부를 때만 필요. 이 컴퓨터에서만 열린다
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  web:
+    # 웹 화면은 fe-code-agent 저장소를 바로 받아 빌드한다
+    build:
+      context: ${WEB_SOURCE:-https://github.com/yeomyaloo/fe-code-agent.git#main}
+    environment:
+      BACKEND_URL: http://backend:8080
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:80"
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  workspace:

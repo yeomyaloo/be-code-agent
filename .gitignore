@@ -40,6 +40,7 @@ out/
 .env
 .env.*
 !.env.example
+!.env.example
 *.pem
 *.key
 *.p12
@@ -70,3 +71,6 @@ node_modules/
 
 ### 클론한 분석 대상 저장소 ###
 workspace/
+
+### docker compose 로 마운트하는 로컬 저장소 ###
+repos/
