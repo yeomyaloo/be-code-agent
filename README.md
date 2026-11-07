@@ -1,5 +1,589 @@
 # be-code-agent
 
+**An LLM multi-agent code security analysis system that explores source code to find security vulnerabilities**
+
+[English](#english) · [한국어](#한국어)
+
+<a id="english"></a>
+
+be-code-agent statically parses a repository's source code into a **code graph**, and LLM agents work on top of it to trace "does user input reach a dangerous API?" in order to find and verify vulnerabilities.
+The architecture follows the dual graph + Planner/Worker design of [ARTEX](https://github.com/Autumn-27/ARTEX), but all code is written from scratch. Where ARTEX explores a **live server**, be-code-agent explores **source code**.
+
+> Current stage: **the Planner → Worker → Verifier agent structure is implemented.**
+> - **Planner (Opus)**: looks at the code graph and decides what to investigate. Besides path investigations, it also creates tasks for missing authorization checks and security configuration reviews.
+> - **Several Workers (Sonnet)**: split the tasks between them and investigate.
+> - **Next Planner round**: looks at the results and adds follow-up tasks or finishes the plan. Up to 3 rounds.
+> - **Verifier (Opus)**: at the end, re-checks the findings one by one.
+>
+> See [Progress](#progress) for details.
+
+> Web UI: **[fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)** (React). Register repositories, browse the code graph, start analyses, follow progress and the agent trace timeline, review findings and get reports from the browser.
+
+> Chat version: **[mcp-code-agent](https://github.com/yeomyaloo/mcp-code-agent)** is a standalone version you install as a Claude Code plugin and use from chat, with no API key and no database.
+>
+> ```bash
+> claude plugin marketplace add yeomyaloo/mcp-code-agent
+> claude plugin install code-agent@yeomyaloo-code-agent
+> ```
+
+![be-code-agent architecture](docs/images/architecture.svg)
+
+---
+
+## Contents
+
+- [Features](#features)
+- [Progress](#progress)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Development](#development)
+- [System architecture](#system-architecture)
+- [Directory structure](#directory-structure)
+- [References](#references)
+- [Built with](#built-with)
+- [License](#license)
+- [Disclaimer](#disclaimer)
+
+---
+
+## Features
+
+### Repository registration (implemented)
+
+- **Register by Git URL**: give the https URL of a public repository and the server shallow-clones only the latest commit into its working folder (`workspace/`). If the branch is omitted, the remote's default branch is used. The cloned branch and commit hash are recorded.
+- **Sync**: fetches the latest commit again from the same URL. Refused while an analysis job is running.
+- **Server protection**: so that this server cannot become a path into the internal network (SSRF), only `https` + allowed hosts (by default github.com, gitlab.com, bitbucket.org) + addresses that resolve to public IPs are accepted. The URL may not contain credentials, a port or a query.
+- **Cloned code is only read**: submodules are not fetched, and symlinks that could point outside the repository are deleted. If the size limit (default 500 MB) is exceeded, the clone is deleted and registration fails. File tools check the real path once more so files outside the repository cannot be read.
+- **Register a local path**: for development, a folder path on the server's disk is also accepted. On a server shared by several people, turn it off with `allow-local-path: false`.
+
+### Code graph construction (implemented)
+
+- **Source-only analysis, no library jars**: types are inferred from import statements and variable/field declarations, falling back to the JavaParser symbol solver. Repositories can be analyzed without building them.
+- **Structure extraction**: builds the file → class → method hierarchy and inheritance links (interface method → implementing method).
+- **HTTP entry point detection**: reads `@GetMapping`, `@PostMapping`, `@RequestMapping` etc. in `@RestController`/`@Controller` classes and normalizes them to the form `GET /api/users/search`. Class-level paths, multiple paths and `method = {GET, HEAD}` are handled.
+- **Sink detection**: about 30 rules in 9 categories find calls to dangerous APIs.
+
+  | Category | CWE | Typical APIs |
+  |---|---|---|
+  | SQL | CWE-89 | `Statement.execute*`, `JdbcTemplate.query*`, `EntityManager.createNativeQuery` |
+  | COMMAND | CWE-78 | `Runtime.exec`, `new ProcessBuilder` |
+  | PATH | CWE-22 | `new File`, `Paths.get`, `Files.read*/write*` |
+  | DESERIALIZATION | CWE-502 | `ObjectInputStream.readObject`, `XStream.fromXML`, `Yaml.load` |
+  | SSRF | CWE-918 | `new URL`, `RestTemplate.*` |
+  | CODE_INJECTION | CWE-94 | `ScriptEngine.eval` |
+  | EXPRESSION_INJECTION | CWE-917 | `SpelExpressionParser.parseExpression` |
+  | JNDI | CWE-74 | `InitialContext.lookup` |
+  | OPEN_REDIRECT | CWE-601 | `HttpServletResponse.sendRedirect` |
+
+- **Entry point → sink path search**: a PostgreSQL recursive CTE extracts "which API reaches which sink through which methods". Calls through interfaces are followed too.
+
+### Agent analysis (implemented)
+
+- **Task (intention) creation**: choose one of two modes (`planner`).
+  - `llm` (default): the **Planner agent** (default Claude Opus 5.5) creates tasks (INTENTION) in the shared task list.
+    - **Round 1**: plans from the entry point → sink paths and the list of entry points. It also creates tasks for problems that have no path:
+      - missing owner checks on APIs that handle data via a path variable (`{id}`) (CWE-639)
+      - missing role checks on admin functions (CWE-862)
+      - security configuration, hardcoded secrets
+    - **Round 2 onward**: after the Workers finish all tasks, it reads their conclusions and findings and adds tasks if follow-up investigation is needed. Otherwise it ends with `finish_planning`.
+    - **Ordered tasks**: linked with `depends_on` (a DEPENDS_ON edge), a task starts only after its prerequisite is done. If the prerequisite fails, the dependent task is marked failed too.
+    - **Stop conditions**: it never exceeds the task limit (`maxIntentions`) or the maximum number of rounds (`planner-rounds`, default 3).
+  - `paths`: mechanically creates one task per entry point → sink path, using the shortest path for each (entry point, sink) pair.
+- **Planner tools**
+  - 5 Planner-only tools
+
+    | Tool | What it does |
+    |---|---|
+    | `list_sink_paths` | Entry point → sink paths (shortest per pair), marking paths that already have a task |
+    | `list_entry_points` | All HTTP entry points (including those that reach no sink; candidates for authorization checks) |
+    | `get_plan` | Shared task list: status, round created, prerequisites, Worker conclusion summary, findings |
+    | `add_intention` | Add a task (instruction, optional entry point and sink, category and CWE, prerequisites). Blocks duplicates of the same path and going over the limit |
+    | `finish_planning` | End planning (no next round) |
+
+  - 6 read-only tools: `read_file`, `grep_code`, `find_code_nodes`, `get_callers`, `get_callees`, `search_worker_traces`
+  - The Planner does not record facts or findings.
+- **Worker agent loop**: Claude calls tools to check in the code whether "external input reaches the sink without being blocked", and leaves a verdict (vulnerable / not vulnerable / undetermined) with evidence. Every step is recorded in `worker_trace`.
+- **8 Worker tools**
+
+  | Tool | What it does |
+  |---|---|
+  | `read_file` | Read a repository file with line numbers (up to 400 lines per call, paths outside the repository blocked) |
+  | `grep_code` | Regex code search (up to 80 matches) |
+  | `find_code_nodes` | Find code graph nodes by name |
+  | `get_callers` / `get_callees` | Callers / callees (interface ↔ implementation included) |
+  | `search_worker_traces` | Search other Workers' traces in the same analysis job |
+  | `record_fact` | Record a fact confirmed in the code |
+  | `record_finding` | Record a vulnerability finding (evidence code location required, saved as pending verification) |
+
+- **Stop conditions**: maximum steps per task, the analysis job's token budget, truncated responses, model refusals, context overflow. If the very first call fails (authentication error etc.), the whole job stops.
+- **Finding verification (Verifier)**: after the Workers finish all tasks, a separate agent (default Claude Opus 5.5) takes each pending (`OPEN`) finding, does not trust the report, re-reads the code and gives a verdict.
+  - Checks: whether the input really comes from outside, whether it is actually reachable from the entry point, whether defenses (input validation, parameter binding, authorization checks, etc.) block it, whether the severity is overstated
+  - Tools: 6 read-only tools (`read_file`, `grep_code`, `find_code_nodes`, `get_callers`, `get_callees`, `search_worker_traces`) + `submit_verdict`
+  - Verdicts: `CONFIRMED` (exploitable) / `REJECTED` (false positive) / `UNCERTAIN` (not enough evidence). The reasoning, the defenses checked and the re-assessed severity are stored in the finding's `props.verification`.
+  - If the Verifier ends without submitting a verdict (step or budget limit, error), the finding is left as `UNCERTAIN`.
+- **Parallel Workers**: several Workers (`codeagent.agent.workers`, default 3) run at the same time in one analysis job. Tasks are taken with `SELECT ... FOR UPDATE SKIP LOCKED` so the same task is never processed twice, and token usage is added atomically in the DB so Workers do not overwrite each other. If one Worker fails on its very first call (authentication error etc.), the other Workers stop too.
+
+### Reports and human review (implemented)
+
+- **SARIF 2.1.0 report**: the standard format read by static analysis tools such as GitHub code scanning. Contains rules per CWE, evidence code locations (the first is the primary location, the rest are related locations), severity scores (`security-severity`), verification verdicts and the analyzed commit (`versionControlProvenance`).
+- **HTML report**: a single-file report you open directly in a browser. Shows counts by severity, a summary table, and for each finding the entry point, sink, attack example, evidence code, verification reasoning and human review result. All LLM-written text and code is escaped, and `Content-Security-Policy` blocks script execution.
+- **Ordering and exclusion**: by severity (the Verifier's re-assessed value first) → verdict (confirmed → pending → uncertain). False positives (`REJECTED`, or marked `FALSE_POSITIVE` by a person) are left out by default and only counted (included with `includeDismissed=true`).
+- **Human review**: for each finding, record `ACCEPTED` / `FALSE_POSITIVE` / `FIXED` / `WONT_FIX` (risk accepted) with a comment. The Verifier's verdict is kept as is; the review is stored separately in `props.review`. The row is locked so it does not overwrite a Verifier writing at the same time.
+
+---
+
+## Progress
+
+| Step | Description | Status |
+|---|---|---|
+| 1 | Project skeleton, DB schema (code graph + analysis graph) | ✅ Done |
+| 1-1 | Register repositories by Git URL (public repositories, shallow clone), sync, SSRF and symlink blocking | ✅ Done |
+| 2 | Code graph construction (Java/Spring parsing, entry points, sinks, call edges) | ✅ Done |
+| 3 | Code graph query API (entry points, sinks, call paths, callers/callees) | ✅ Done |
+| 4 | LLM integration (Anthropic Java SDK), 8 Worker tools, Worker agent loop | ✅ Done (real API calls to be verified once an API key is registered) |
+| 5 | Shared task list (`SKIP LOCKED`) and analysis job API | ✅ Done |
+| 5-1 | Parallel Workers (`workers`, default 3) | ✅ Done |
+| 5-2 | LLM Planner (multi-round planning, checks without paths, DEPENDS_ON ordering, cascading failures) | ✅ Done (real API calls to be verified once an API key is registered) |
+| 6 | Finding verification (Verifier, false positive removal) | ✅ Done (real API calls to be verified once an API key is registered) |
+| 7 | Reports (SARIF 2.1.0, HTML), human review API | ✅ Done |
+| 8 | Web UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent), progress via 2-second polling) | ✅ Done |
+| 8-1 | Real-time progress (SSE), human approval step | ⬜ Planned |
+
+---
+
+## Installation
+
+### Requirements
+
+- Run Gradle with **JDK 17 or later** (the JDK 21 used for the build is downloaded automatically by the Gradle toolchain)
+- **PostgreSQL 15 or later**
+
+### 1. Prepare the database
+
+After installing PostgreSQL, connect with `psql -U postgres` and run:
+
+```sql
+create user codeagent with password 'codeagent';
+create database codeagent owner codeagent;
+```
+
+Tables are created automatically by Flyway (`src/main/resources/db/migration`) when the application starts.
+
+### 2. Register an Anthropic API key
+
+Only needed for agent analysis (`/analyses`). Building and querying the code graph works without a key.
+
+1. Get an API key from the [Anthropic Console](https://console.anthropic.com).
+2. Copy the sample file to create `application-local.yml`.
+
+   ```bash
+   cp src/main/resources/application-local.yml.example src/main/resources/application-local.yml
+   ```
+
+3. Put the key in `application-local.yml`.
+
+   ```yaml
+   codeagent:
+     llm:
+       api-key: sk-ant-...
+   ```
+
+`application-local.yml` is in `.gitignore`, so it is never pushed to git. **Do not write the key directly in `application.yml`.** See [Managing secrets](#managing-secrets) for details.
+
+### 3. Run
+
+```bash
+./gradlew bootRun
+```
+
+In Windows PowerShell, use `.\gradlew.bat bootRun`.
+The default address is `http://localhost:8080`.
+
+---
+
+## Configuration
+
+The configuration file is `src/main/resources/application.yml`. It can be overridden with these environment variables.
+
+| Environment variable | Default | Description |
+|---|---|---|
+| `DB_URL` | `jdbc:postgresql://localhost:5432/codeagent` | DB connection URL |
+| `DB_USERNAME` | `codeagent` | DB user |
+| `DB_PASSWORD` | `codeagent` | DB password |
+| `ANTHROPIC_API_KEY` | (none) | Anthropic API key (`codeagent.llm.api-key`) |
+| `CODEAGENT_WORKSPACE` | `./workspace` | Folder where Git repositories are cloned |
+| `CODEAGENT_ALLOW_LOCAL_PATH` | `true` | Whether registering a folder path on the server's disk is allowed |
+
+- JPA runs with `ddl-auto: validate`, so schema changes must go in a Flyway migration file (the next number, like `V5__...sql`). Migration files that have already been applied are never edited.
+- Virtual threads (`spring.threads.virtual.enabled`) are enabled.
+
+### Managing secrets
+
+Secrets such as API keys and passwords only have a **placeholder** in `application.yml`; the real values live somewhere that is not pushed to git.
+
+| File / location | Contents | git |
+|---|---|---|
+| `src/main/resources/application.yml` | Only placeholders such as `api-key: ${ANTHROPIC_API_KEY:}` | Committed |
+| `src/main/resources/application-local.yml` | Real values on your own PC (read automatically at startup) | **Not committed** |
+| `src/main/resources/application-local.yml.example` | Sample of the file above | Committed |
+| Environment variables | Recommended for server deployments | - |
+
+Values are read in the order `application-local.yml` → environment variables. If `application-local.yml` has `codeagent.llm.api-key`, that value is used; otherwise the `ANTHROPIC_API_KEY` environment variable is used.
+
+`.gitignore` also excludes `.env`, certificate files such as `*.pem` and `*.key`, `application-secret.yml`, and log files.
+
+### LLM settings
+
+Change these under `codeagent.llm` and `codeagent.agent` in `application.yml`.
+
+| Setting | Default | Description |
+|---|---|---|
+| `codeagent.llm.worker.model` | `claude-sonnet-5-5` | Model used by the Workers |
+| `codeagent.llm.worker.effort` | `medium` | Worker reasoning effort (`low` / `medium` / `high` / `xhigh` / `max`) |
+| `codeagent.llm.verifier.*` | `claude-opus-5-5`, `high` | Model and reasoning effort for the Verifier |
+| `codeagent.llm.planner.*` | `claude-opus-5-5`, `high` | Model and reasoning effort for the Planner |
+| `codeagent.llm.max-tokens` | `16000` | Maximum output tokens per response |
+| `codeagent.llm.fallbacks` | `true` | If the model refuses a request through its safety classifier, the server automatically retries with another model |
+| `codeagent.agent.max-steps` | `40` | Maximum number of LLM calls per task |
+| `codeagent.agent.workers` | `3` | Number of Workers running at once in one analysis job. Adjust to your API rate limits (requests and tokens per minute) |
+| `codeagent.agent.planner` | `llm` | Task creation mode when the request does not set one (`llm` / `paths`) |
+| `codeagent.agent.planner-rounds` | `3` | Maximum number of rounds in which the Planner creates tasks |
+
+The system prompts (`agent/PlannerPrompts.java`, `agent/WorkerPrompts.java`, `agent/VerifierPrompts.java`) are the same for every round and task, so prompt caching applies to them.
+
+### Repository clone settings
+
+Change these under `codeagent.workspace` in `application.yml`.
+
+| Setting | Default | Description |
+|---|---|---|
+| `dir` | `./workspace` | Clone folder (excluded from git) |
+| `allowed-hosts` | `github.com, gitlab.com, bitbucket.org` | Hosts allowed for cloning. Add your company Git server here to use it |
+| `max-size-mb` | `500` | Repository size limit |
+| `timeout-seconds` | `60` | Network connect and read timeout |
+| `allow-local-path` | `true` | Allow registering a folder path on the server's disk |
+
+Private repositories (auth tokens) are not supported yet.
+
+---
+
+## Usage
+
+### 1. Register a repository to analyze
+
+Register it by Git URL. If `name` is omitted, the repository name is used; if `branch` is omitted, the default branch is used.
+
+```bash
+curl -X POST localhost:8080/api/projects -H "Content-Type: application/json" \
+     -d '{"gitUrl":"https://github.com/spring-projects/spring-petclinic"}'
+```
+
+For development you can also register a folder on the server's disk (use forward slashes (`/`) in the path).
+
+```bash
+curl -X POST localhost:8080/api/projects -H "Content-Type: application/json" \
+     -d '{"name":"my-app","repoPath":"C:/path/to/my-app"}'
+```
+
+| API | Description |
+|---|---|
+| `POST /api/projects` | Register. Exactly one of `gitUrl` (+ `branch`) and `repoPath`. `name` and `language` (default `java`) are optional |
+| `POST /api/projects/{id}/sync` | Fetch the Git repository again at the latest commit. Then call `/index` to update the code graph |
+
+The response's `gitBranch`, `commitSha` and `syncedAt` tell you which commit is being analyzed.
+
+### 2. Build the code graph
+
+```bash
+curl -X POST localhost:8080/api/projects/1/index
+```
+
+Call it again when the code changes. Nodes keep their id as long as `(kind, qualified name)` stays the same, so results from earlier analyses (anchors) remain connected.
+
+- Nodes that disappear from the parse result are deleted. Nodes referenced by an analysis graph are only marked with `removed_at` and kept (they are left out of the query APIs).
+- A node that disappeared and comes back is revived with the same id.
+- Call edges are rebuilt every time.
+- Sink node names include the line number, so if code above them changes and lines shift, they become new nodes.
+
+The response contains the number of files, classes, methods, entry points and sinks, the number of call edges, the number of calls whose type could not be resolved, the number of deleted nodes (`removedNodes`), the number of nodes only marked and kept (`retainedNodes`), the list of parse errors and the elapsed time.
+
+### 3. Queries
+
+| API | Description |
+|---|---|
+| `GET /api/projects` | Registered repositories |
+| `GET /api/projects/{id}/code-graph/entry-points` | HTTP entry points |
+| `GET /api/projects/{id}/code-graph/sinks` | Sinks (category, CWE, code snippet, location) |
+| `GET /api/projects/{id}/code-graph/sink-paths?maxDepth=12` | Entry point → sink call paths (max depth 30, at most 500) |
+| `GET /api/projects/{id}/code-graph/nodes/{nodeId}/callers` | Methods that call this method |
+| `GET /api/projects/{id}/code-graph/nodes/{nodeId}/callees` | Methods and sinks this method calls |
+
+### 4. Agent analysis (API key required)
+
+```bash
+# Start an analysis (runs in the background, returns 202 right away). Defaults: planner=llm, task limit 10 (5 for paths), token budget 2 million
+curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: application/json" \
+     -d '{"planner":"llm","maxIntentions":8,"budgetTokens":1000000}'
+```
+
+| API | Description |
+|---|---|
+| `POST /api/projects/{id}/analyses` | Start an analysis. `planner` (`llm` / `paths`), `maxIntentions` (1–100, task limit), `budgetTokens` (at least 10,000) |
+| `GET /api/projects/{id}/analyses` | The project's analysis jobs (newest first). For each job: number of tasks, number of finished tasks, finding counts by status (`OPEN` / `CONFIRMED` / `REJECTED` / `UNCERTAIN`) |
+| `GET /api/analyses/{jobId}` | Job status (`RUNNING` / `DONE` / `STOPPED` / `FAILED`), token usage, error, all analysis graph nodes |
+| `GET /api/analyses/{jobId}/findings?status=` | Findings (CWE, severity, confidence, evidence code locations, verification result). Filter with `status`: `OPEN` (pending verification) / `CONFIRMED` / `REJECTED` / `UNCERTAIN` |
+| `POST /api/analyses/{jobId}/verify` | Re-verify pending findings (finished jobs only; 400 while running) |
+| `POST /api/analyses/{jobId}/findings/{findingId}/review` | Record a human review. `{"decision":"FALSE_POSITIVE","comment":"test code"}` (`ACCEPTED` / `FALSE_POSITIVE` / `FIXED` / `WONT_FIX`) |
+| `GET /api/analyses/{jobId}/report.sarif?includeDismissed=` | SARIF 2.1.0 report file |
+| `GET /api/analyses/{jobId}/report.html?includeDismissed=` | HTML report (open in a browser) |
+| `GET /api/analyses/{jobId}/traces?intentionId=` | Analysis traces (Claude responses, tool calls and results). Filter Planner traces by the GOAL id, Worker traces by the task id, Verifier traces by the finding id |
+
+For each task, a "task #N conclusion" FACT node holds the Worker's final verdict and tokens used, and the Planner leaves a "planning round N conclusion" FACT for each round. To see only confirmed vulnerabilities, use `findings?status=CONFIRMED`.
+The code graph must be built first. `paths` returns 400 if there is not a single entry point → sink path. `llm` plans authorization issues and the like as long as there are entry points, even without paths.
+
+---
+
+## Development
+
+```bash
+./gradlew test      # tests
+./gradlew build     # build
+```
+
+- `CodeGraphBuilderTest` runs without a DB. It parses a deliberately vulnerable sample app (`src/test/resources/fixtures/vulnerable-app`) and checks entry points, sinks, inheritance links and reachable paths.
+- `FileToolsTest` runs without a DB. It checks range reads of the `read_file` and `grep_code` tools, blocking of paths and symlinks outside the repository, and input error handling.
+- `GitUrlPolicyTest` and `GitClonerTest` run without a DB or network. They check that disallowed URLs (http, file://, credentials, internal IPs, etc.) are refused, and test shallow clone, branch selection and the size limit against a remote repository created locally. The symlink test is skipped where the environment has no permission to create links (a regular Windows account).
+- `CodeAgentApplicationTests` starts the Spring context, so PostgreSQL must be running.
+- `CodeGraphReindexTest` copies the sample app to a temporary folder, edits and deletes files, and checks rebuilding (node ids kept, anchors preserved, removed nodes cleaned up). Requires PostgreSQL.
+- `AnalysisFlowTest` uses a fake `AgentLoop` that calls the tools directly instead of real Claude, and checks the flow task creation → distribution → recording facts and findings → verification verdicts (confirmed, false positive, no verdict submitted) → job end, plus the Worker and Verifier tool sets and re-running verification. It needs no API key but needs PostgreSQL, and **leaves test data (projects, analysis jobs) in the local `codeagent` DB.**
+- `PlannerFlowTest` checks the LLM planning flow the same way: planning round 1 (path tasks + authorization checks without paths, DEPENDS_ON, rejecting duplicates and invalid nodes) → Worker execution order → round 2 (reading conclusions with get_plan, follow-ups, rejecting going over the limit, finish_planning) → round 3 skipped, and cascading failure when a prerequisite fails.
+- **Adding a tool**: create a `@Component` implementing `agent/tool/AgentTool`, and add its name to the tool list of each role that uses it (`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`). For invalid input, throw `ToolInputException`; it is passed to Claude as an error so it can retry.
+- **Adding a sink rule**: add `rule(type FQN, category, CWE, methods...)` to `RULES` in `codegraph/ingest/SinkRules.java`. Write constructors as the method name `<init>`.
+- **Adding an entry point kind**: extend `codegraph/ingest/EntryPointDetector.java`.
+
+---
+
+## System architecture
+
+### Tech stack
+
+| Area | Technology |
+|---|---|
+| Language / framework | Java 21, Spring Boot 4.1 (Web MVC, Data JPA, Validation) |
+| Build | Gradle 9.7 |
+| DB | PostgreSQL + Flyway migrations, recursive CTEs for graph traversal |
+| Code parsing | JavaParser 3.26 + symbol solver |
+| LLM | Anthropic Java SDK 2.68 (Worker: Claude Sonnet 5.5, Planner and Verifier: Claude Opus 5.5) |
+| Other | Lombok, virtual threads |
+
+### Core concept: dual graph
+
+ARTEX's "asset graph + exploration graph" design, adapted to code analysis.
+
+```
+ ┌──────────────────────────────┐            ┌──────────────────────────────┐
+ │  Code graph (per project)    │            │  Analysis graph (per job)    │
+ │  = ARTEX asset graph         │            │  = ARTEX exploration graph   │
+ │                              │            │                              │
+ │  FILE ─CONTAINS→ CLASS       │   anchor   │  GOAL ─SPAWNS→ INTENTION     │
+ │  CLASS ─CONTAINS→ METHOD     │◄──────────►│  INTENTION ─YIELDS→ FACT     │
+ │  ENTRY_POINT ─ROUTES_TO→     │  EXAMINED  │  FACT ─PROVES→ FINDING       │
+ │  METHOD ─CALLS→ METHOD/SINK  │  SOURCE    │  HINT, DERIVED_FROM,         │
+ │  METHOD ─OVERRIDDEN_BY→      │  SINK      │  DEPENDS_ON                  │
+ │                              │ LOCATED_AT │                              │
+ └──────────────────────────────┘            └──────────────────────────────┘
+```
+
+| ARTEX | be-code-agent |
+|---|---|
+| Asset graph: domain → subdomain → IP → service → endpoint | **Code graph**: file → class → method, entry points, sinks, call edges |
+| Exploration graph: goal / intent / fact / finding / hint | **Analysis graph**: GOAL / INTENTION / FACT / FINDING / HINT |
+| Edges: spawns / derived_from / yields / proves | The same edges + **DEPENDS_ON** (ordering between tasks) |
+| `exploration_anchors` | **`anchor`**: analysis node ↔ code node (roles: EXAMINED, SOURCE, SINK, LOCATED_AT) |
+| Worker trace search (`search_all_worker_traces`) | **`worker_trace`** table + full-text search (GIN) index |
+| Traffic recording proxy | (none; not needed for code analysis) |
+
+- The **code graph** is kept once per project. Nodes are unique by `(kind, qualified name)`.
+- The **analysis graph** is built fresh for each analysis job (`analysis_job`). Tasks go `OPEN → CLAIMED → DONE / FAILED`; findings go `OPEN` (pending verification) → `CONFIRMED / REJECTED / UNCERTAIN`.
+- **Anchors** let you ask from either side "has this method already been examined?" and "which code did this task look at?", so the same analysis is not repeated.
+
+### Code graph construction flow
+
+```
+Repository path
+  │
+  ▼
+JavaProject.load()         finds src/main/java roots and parses .java files (skips build, target, etc.)
+  │                        pass 1: collect project type names → pass 2: index types, supertypes, methods
+  ▼
+CodeGraphBuilder.build()
+  ├─ addStructure()        FILE → CLASS → METHOD (CONTAINS)
+  ├─ addOverrides()        supertype method → implementing method (OVERRIDDEN_BY)
+  ├─ addEntryPoints()      EntryPointDetector → ENTRY_POINT (ROUTES_TO)
+  └─ addCalls()            resolves the target type of each method call (TypeResolver → symbol solver)
+                           ├─ project method → CALLS
+                           └─ matches SinkRules → SINK node + CALLS
+  ▼
+CodeGraphDraft             in-memory graph before saving (deduplicated)
+  ▼
+CodeGraphIndexer           upsert nodes (ids kept) → clean up removed nodes → rebuild edges (JdbcTemplate batches of 500)
+```
+
+### Current agent execution flow
+
+![Agent loop flow](docs/images/agent-loop.svg)
+
+```
+POST /analyses
+  │
+  ▼
+AnalysisService.start()     creates the GOAL. With paths, one INTENTION per path (GOAL ─SPAWNS→ INTENTION, anchors linked)
+  │
+  ▼  if planner=llm
+Planner round 1             AgentLoop(Opus, planning tools) → add_intention creates INTENTIONs, "planning round 1 conclusion" FACT
+  │
+  ▼  N Workers (default 3) start at once on virtual threads
+claimNextIntention()        moves one OPEN task whose prerequisites (DEPENDS_ON) are done to CLAIMED (SELECT ... FOR UPDATE SKIP LOCKED)
+  ▼
+AgentLoop.run()             call Claude → on tool_use run the tool → send back tool_result → repeat
+  │                         every step goes to worker_trace, token usage is accumulated atomically in the DB
+  ▼
+record the conclusion FACT, mark the INTENTION DONE / FAILED → next task (job STOPPED if the budget runs out)
+  │
+  ▼  once every Worker stops because there is no task left to take
+failBlockedIntentions()     marks tasks FAILED that can never start because a prerequisite failed
+  │
+  ▼  if planner=llm, rounds remain and finish_planning has not been called
+Planner round N             reads results with get_plan → adds follow-up tasks (Workers run again if any) / finish_planning
+  │
+  ▼  when there is nothing more to do
+VerificationService         runs a Verifier agent for each pending (OPEN) FINDING (Opus, read-only tools + submit_verdict)
+  │                         → CONFIRMED / REJECTED / UNCERTAIN, reasoning in props.verification
+  ▼
+job DONE (STOPPED if the budget runs out during verification; continue the remaining findings with POST /verify)
+```
+
+### Planner · Worker · Verifier structure
+
+ARTEX's "multi-round Planner + shared task list + parallel Workers" design, carried over to code analysis.
+
+```
+             [ User / REST API / web UI (fe-code-agent) ]
+                            │
+                      ┌─────▼──────┐
+                      │  Planner   │ ← shared task list (order managed with DEPENDS_ON)
+                      └─────┬──────┘
+          hands out path investigations, authorization checks, etc. as INTENTIONs
+          ┌─────────────┬───┴─────────┬─────────────┐
+      ┌───▼───┐     ┌───▼───┐     ┌───▼───┐     ┌───▼───┐
+      │Worker1│     │Worker2│     │Worker3│ ... │WorkerN│  (virtual threads)
+      └───┬───┘     └───┬───┘     └───┬───┘     └───┬───┘
+          └──── search each other's worker_trace ───┘
+                            │
+               record FACT / FINDING → next Planner round once all tasks are done
+                            │
+                      ┌─────▼──────┐
+                      │  Verifier  │ ← re-checks each finding for false positives
+                      └────────────┘
+```
+
+Stop conditions: the Planner calls `finish_planning` or creates no new tasks, the maximum number of rounds (`planner-rounds`) is reached, or the analysis job's token budget (`analysis_job.budget_tokens`) is used up.
+
+---
+
+## Directory structure
+
+```
+be-code-agent/
+├── build.gradle, settings.gradle, gradlew          Gradle build
+├── src/main/java/com/codeagent/
+│   ├── CodeAgentApplication.java                    entry point
+│   ├── project/                                     repositories under analysis (Project), analysis jobs (AnalysisJob)
+│   │   ├── ProjectService.java                      register by Git URL / local path, sync
+│   │   └── source/                                  GitUrlPolicy (URL checks), GitCloner (JGit shallow clone)
+│   ├── codegraph/
+│   │   ├── domain/                                  CodeNode, CodeEdge entities and kinds (enum)
+│   │   ├── ingest/                                  code graph construction
+│   │   │   ├── JavaProject.java                     source parsing, type and method index
+│   │   │   ├── TypeResolver.java                    type name → FQN based on imports
+│   │   │   ├── EntryPointDetector.java              Spring MVC entry point detection
+│   │   │   ├── SinkRules.java, SinkRule.java        sink rules
+│   │   │   ├── CodeGraphBuilder.java                graph assembly
+│   │   │   ├── CodeGraphDraft.java                  in-memory graph before saving
+│   │   │   └── CodeGraphIndexer.java                DB storage (updates while keeping node ids)
+│   │   └── query/CodeGraphQuery.java                queries, recursive CTE path search
+│   ├── analysisgraph/
+│   │   ├── domain/                                  AnalysisNode/Edge, Anchor, WorkerTrace
+│   │   └── AnalysisGraphService.java                records analysis graph nodes, edges and anchors
+│   ├── llm/                                         LLM settings (LlmProperties, AgentProperties), Anthropic client
+│   ├── agent/
+│   │   ├── AgentLoop.java                           tool call loop (Claude ↔ tools)
+│   │   ├── PlannerPrompts.java                      Planner system prompt, round prompt
+│   │   ├── WorkerPrompts.java                       Worker system prompt, task prompt (path / planner instruction)
+│   │   ├── VerifierPrompts.java                     Verifier system prompt, finding prompt
+│   │   └── tool/                                    8 Worker tools, 5 Planner tools (+PlanSupport), Verifier verdict tool, input checks (ToolInput)
+│   ├── orchestrator/
+│   │   ├── AnalysisService.java                     creates analysis jobs, alternates Planner rounds ↔ Worker runs, starts verification
+│   │   ├── PlannerMode.java                         task creation mode (llm / paths)
+│   │   └── VerificationService.java                 runs the Verifier for each pending finding
+│   ├── report/                                      reports: ReportService (collects findings), SarifWriter, HtmlReportWriter
+│   ├── api/                                         REST controllers (projects, code graph, analyses, reports)
+│   └── common/GlobalExceptionHandler.java           maps to 404 / 400 responses
+├── src/main/resources/
+│   ├── application.yml                              shared settings (placeholders only for secrets)
+│   ├── application-local.yml.example                sample personal secrets file
+│   └── db/migration/
+│       ├── V1__init.sql                             full schema
+│       ├── V2__job_error_and_usage.sql              analysis job error and token usage columns
+│       ├── V3__code_node_reindex.sql                code node indexed_at / removed_at
+│       └── V4__project_git_source.sql               project Git URL, branch, commit
+└── src/test/
+    ├── java/.../CodeGraphBuilderTest.java           code graph test (no DB)
+    ├── java/.../CodeGraphReindexTest.java           code graph rebuild test (DB required)
+    ├── java/.../FileToolsTest.java                  file tool test (no DB)
+    ├── java/.../AnalysisFlowTest.java               analysis flow integration test (DB required, no API key)
+    ├── java/.../PlannerFlowTest.java                LLM planning flow integration test (DB required, no API key)
+    ├── java/.../GitUrlPolicyTest.java               Git URL check test (no DB or network)
+    ├── java/.../GitClonerTest.java                  clone test against a local remote (no DB or network)
+    ├── java/.../ReportTest.java                     SARIF and HTML report, human review test (DB required)
+    ├── java/.../AnalysisListTest.java               per-project analysis list API test (DB required)
+    └── resources/fixtures/vulnerable-app/           deliberately vulnerable sample app for tests
+```
+
+---
+
+## References
+
+- [ARTEX](https://github.com/Autumn-27/ARTEX): only architecture ideas were borrowed, such as the dual graph, Planner/Worker, anchors and shared Worker traces. ARTEX is AGPL-3.0, and this repository contains no ARTEX code.
+
+## Built with
+
+- [JavaParser](https://javaparser.org/) (Apache-2.0 or LGPL-3.0, your choice): Java source parsing, type resolution
+- [Anthropic Java SDK](https://github.com/anthropics/anthropic-sdk-java) (MIT): Claude API calls
+- [CWE](https://cwe.mitre.org/) (MITRE): vulnerability classification ids attached to sinks and findings (e.g. CWE-89 SQL injection)
+
+---
+
+## License
+
+[Apache License 2.0](LICENSE)
+
+---
+
+## Disclaimer
+
+- This tool is for security reviews of **source code you own or are authorized to analyze**.
+- Results are based on static analysis and LLM judgment, so there can be false positives and false negatives. A person must review them and make the final call.
+- Agent analysis sends parts of the analyzed source code to the Anthropic API. Do not analyze code that must not leave your environment.
+- Agent analysis costs as much as your Anthropic API usage. Use `budgetTokens` to set a limit per job.
+
+---
+
+<a id="한국어"></a>
+
+# be-code-agent (한국어)
+
 **소스코드를 탐색해 보안 취약점을 찾는 LLM 멀티 에이전트 코드 보안 분석 시스템**
 
 be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그래프**를 만들고, 그 위에서 LLM 에이전트가 "사용자 입력이 위험한 API까지 도달하는가"를 추적해 취약점을 찾고 검증하는 것을 목표로 한다.
@@ -14,6 +598,13 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 > 자세한 내용은 [진행 상황](#진행-상황)을 참고.
 
 > 웹 화면: **[fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)** (React). 저장소 등록, 코드 그래프 조회, 분석 시작, 진행 상황·에이전트 기록 타임라인, 발견 검토, 보고서를 브라우저에서 할 수 있다.
+
+> 채팅 버전: **[mcp-code-agent](https://github.com/yeomyaloo/mcp-code-agent)**. API 키와 DB 없이 Claude Code 플러그인으로 설치해 채팅에서 쓰는 독립 버전이다.
+>
+> ```bash
+> claude plugin marketplace add yeomyaloo/mcp-code-agent
+> claude plugin install code-agent@yeomyaloo-code-agent
+> ```
 
 ![be-code-agent 아키텍처](docs/images/architecture.svg)
 
