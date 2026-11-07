@@ -19,7 +19,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 
 > Web UI: **[fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)** (React). Register repositories, browse the code graph, start analyses, follow progress and the agent trace timeline, review findings and get reports from the browser.
 
-> Chat version: **[mcp-code-agent](https://github.com/yeomyaloo/mcp-code-agent)** is a standalone version you install as a Claude Code plugin and use from chat, with no API key and no database.
+> Chat version: **[mcp-code-agent](https://github.com/yeomyaloo/mcp-code-agent)** runs the same kind of audit from chat as a Claude Code plugin. It is not a fallback for people without an API key but a different way of working: Claude in your chat drives the audit using whatever Claude Code is logged in with (a Claude subscription or an API key), with no server or database to run.
 >
 > ```bash
 > claude plugin marketplace add yeomyaloo/mcp-code-agent
@@ -599,7 +599,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 
 > 웹 화면: **[fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)** (React). 저장소 등록, 코드 그래프 조회, 분석 시작, 진행 상황·에이전트 기록 타임라인, 발견 검토, 보고서를 브라우저에서 할 수 있다.
 
-> 채팅 버전: **[mcp-code-agent](https://github.com/yeomyaloo/mcp-code-agent)**. API 키와 DB 없이 Claude Code 플러그인으로 설치해 채팅에서 쓰는 독립 버전이다.
+> 채팅 버전: **[mcp-code-agent](https://github.com/yeomyaloo/mcp-code-agent)**. 같은 분석을 Claude Code 플러그인으로 채팅에서 하는 버전이다. API 키가 없을 때만 쓰는 대안이 아니라 쓰는 방식이 다른 선택지다. Claude Code에 로그인한 방식(Claude 구독이든 API 키든)으로 채팅의 Claude가 분석을 이끌고, 띄울 서버나 DB가 없다.
 >
 > ```bash
 > claude plugin marketplace add yeomyaloo/mcp-code-agent
