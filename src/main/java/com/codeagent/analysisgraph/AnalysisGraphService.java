@@ -185,6 +185,15 @@ public class AnalysisGraphService {
         });
     }
 
+    /** 할 일을 건너뛴다 (사람이 승인 단계에서 뺌) */
+    @Transactional
+    public void skip(Long nodeId) {
+        nodeRepository.findById(nodeId).ifPresent(node -> {
+            node.skip();
+            events.changed(node.getJobId(), "node");
+        });
+    }
+
     @Transactional
     public void fail(Long nodeId) {
         nodeRepository.findById(nodeId).ifPresent(node -> {

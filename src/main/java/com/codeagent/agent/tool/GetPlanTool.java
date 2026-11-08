@@ -87,6 +87,7 @@ public class GetPlanTool implements AgentTool {
             case CLAIMED -> "조사 중";
             case DONE -> "완료";
             case FAILED -> "실패";
+            case SKIPPED -> "사람이 뺌";
             default -> intention.getStatus().name();
         };
     }

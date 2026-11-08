@@ -67,8 +67,17 @@ public class AnalysisController {
     /**
      * @param maxIntentions 할 일 수 상한 (경로 계획이면 조사할 경로 수). 생략하면 LLM 계획 10, 경로 계획 5
      * @param planner       llm(계획 담당이 할 일을 정함) 또는 paths(경로마다 기계적으로). 생략하면 codeagent.agent.planner
+     * @param requireApproval true 면 계획이 나올 때마다 사람이 승인해야 Worker 가 돈다. 생략하면 codeagent.agent.require-approval
      */
-    public record StartAnalysisRequest(@Min(1) @Max(100) Integer maxIntentions, @Min(10_000) Long budgetTokens, String planner) {
+    public record StartAnalysisRequest(@Min(1) @Max(100) Integer maxIntentions, @Min(10_000) Long budgetTokens, String planner,
+                                       Boolean requireApproval) {
+    }
+
+    /** @param skipIntentionIds 실행하지 않을 할 일 (승인 대기 중인 할 일만) */
+    public record ApproveRequest(List<Long> skipIntentionIds, String comment) {
+    }
+
+    public record RejectRequest(String comment) {
     }
 
     public record JobView(Long id, Long projectId, String status, Long budgetTokens, long usedTokens,
@@ -118,7 +127,9 @@ public class AnalysisController {
         int maxIntentions = request == null || request.maxIntentions() == null
                 ? (planner == PlannerMode.LLM ? 10 : 5) : request.maxIntentions();
         long budget = request == null || request.budgetTokens() == null ? 2_000_000L : request.budgetTokens();
-        AnalysisJob job = analysisService.start(projectId, maxIntentions, budget, planner);
+        boolean requireApproval = request == null || request.requireApproval() == null
+                ? agentProperties.requireApproval() : request.requireApproval();
+        AnalysisJob job = analysisService.start(projectId, maxIntentions, budget, planner, requireApproval);
         return JobView.from(jobRepository.findById(job.getId()).orElseThrow());
     }
 
@@ -181,6 +192,24 @@ public class AnalysisController {
                 .orElseThrow(() -> new NoSuchElementException("분석 작업 없음: " + jobId));
         List<NodeView> nodes = nodeRepository.findByJobIdOrderById(jobId).stream().map(this::nodeView).toList();
         return new AnalysisView(JobView.from(job), nodes);
+    }
+
+    /**
+     * 승인 대기(WAITING_APPROVAL) 중인 계획을 승인하고 이어서 진행한다. skipIntentionIds 의 할 일은 건너뛴다.
+     * 승인 대기가 아니면 400.
+     */
+    @PostMapping("/api/analyses/{jobId}/approve")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public JobView approve(@PathVariable Long jobId, @RequestBody(required = false) ApproveRequest request) {
+        AnalysisJob job = analysisService.approve(jobId,
+                request == null ? List.of() : request.skipIntentionIds(), request == null ? null : request.comment());
+        return JobView.from(job);
+    }
+
+    /** 승인 대기 중인 계획을 거절하고 작업을 멈춘다 (STOPPED). 남은 할 일은 건너뛴다 */
+    @PostMapping("/api/analyses/{jobId}/reject")
+    public JobView reject(@PathVariable Long jobId, @RequestBody(required = false) RejectRequest request) {
+        return JobView.from(analysisService.reject(jobId, request == null ? null : request.comment()));
     }
 
     /** 검증 대기(OPEN) 발견을 다시 검증한다. 끝난 작업에만 쓸 수 있다 */

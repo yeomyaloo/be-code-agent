@@ -46,6 +46,8 @@ codeagent:
     planner: llm
     # 계획 담당이 할 일을 정하는 최대 회차 (1회차 + 조사 결과를 보고 보완하는 회차)
     planner-rounds: 3
+    # true 면 Worker 를 돌리기 전에 사람이 계획(할 일 목록)을 승인해야 한다 (요청의 requireApproval 로 바꿀 수 있음)
+    require-approval: false
   workspace:
     # Git 주소로 등록한 저장소를 클론하는 곳
     dir: ${CODEAGENT_WORKSPACE:./workspace}

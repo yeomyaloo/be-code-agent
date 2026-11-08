@@ -81,6 +81,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 
 ### Agent analysis (implemented)
 
+- **Human approval (optional, `requireApproval`)**: whenever a plan is ready (the `paths` task list, or each Planner round that adds tasks), the job stops at `WAITING_APPROVAL` before any Worker runs, so no tokens are spent until a person agrees. Approve to continue (optionally dropping tasks, which become `SKIPPED`; tasks that depend on them fail), or reject to stop the job. Decisions are kept in the goal's `props.approvals`. The waiting state is stored in the DB, so it survives a server restart.
 - **Task (intention) creation**: choose one of two modes (`planner`).
   - `llm` (default): the **Planner agent** (default Claude Opus 5.5) creates tasks (INTENTION) in the shared task list.
     - **Round 1**: plans from the entry point → sink paths and the list of entry points. It also creates tasks for problems that have no path:
@@ -151,7 +152,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 7 | Reports (SARIF 2.1.0, HTML), human review API | ✅ Done |
 | 8 | Web UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)) | ✅ Done |
 | 8-1 | Real-time progress (SSE, falls back to 2-second polling) | ✅ Done |
-| 8-2 | Human approval step | ⬜ Planned |
+| 8-2 | Human approval step: approve each plan (and drop tasks) before Workers run, or reject it | ✅ Done |
 | 9 | One-click Docker Compose setup (PostgreSQL + backend + web UI), checked on GitHub Actions | ✅ Done |
 
 ---
@@ -278,6 +279,7 @@ Change these under `codeagent.llm` and `codeagent.agent` in `application.yml`.
 | `codeagent.agent.workers` | `3` | Number of Workers running at once in one analysis job. Adjust to your API rate limits (requests and tokens per minute) |
 | `codeagent.agent.planner` | `llm` | Task creation mode when the request does not set one (`llm` / `paths`) |
 | `codeagent.agent.planner-rounds` | `3` | Maximum number of rounds in which the Planner creates tasks |
+| `codeagent.agent.require-approval` | `false` | Default for `requireApproval`: wait for human approval of each plan before Workers run |
 
 The system prompts (`agent/PlannerPrompts.java`, `agent/WorkerPrompts.java`, `agent/VerifierPrompts.java`) are the same for every round and task, so prompt caching applies to them.
 
@@ -353,14 +355,16 @@ The response contains the number of files, classes, methods, entry points and si
 ```bash
 # Start an analysis (runs in the background, returns 202 right away). Defaults: planner=llm, task limit 10 (5 for paths), token budget 2 million
 curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: application/json" \
-     -d '{"planner":"llm","maxIntentions":8,"budgetTokens":1000000}'
+     -d '{"planner":"llm","maxIntentions":8,"budgetTokens":1000000,"requireApproval":true}'
 ```
 
 | API | Description |
 |---|---|
-| `POST /api/projects/{id}/analyses` | Start an analysis. `planner` (`llm` / `paths`), `maxIntentions` (1–100, task limit), `budgetTokens` (at least 10,000) |
+| `POST /api/projects/{id}/analyses` | Start an analysis. `planner` (`llm` / `paths`), `maxIntentions` (1–100, task limit), `budgetTokens` (at least 10,000), `requireApproval` (wait for human approval of each plan) |
 | `GET /api/projects/{id}/analyses` | The project's analysis jobs (newest first). For each job: number of tasks, number of finished tasks, finding counts by status (`OPEN` / `CONFIRMED` / `REJECTED` / `UNCERTAIN`) |
-| `GET /api/analyses/{jobId}` | Job status (`RUNNING` / `DONE` / `STOPPED` / `FAILED`), token usage, error, all analysis graph nodes |
+| `POST /api/analyses/{jobId}/approve` | Approve the plan of a `WAITING_APPROVAL` job and continue. `{"skipIntentionIds":[12],"comment":"out of scope"}` drops tasks (400 if not waiting) |
+| `POST /api/analyses/{jobId}/reject` | Reject the plan and stop the job (`STOPPED`); remaining tasks are skipped. `{"comment":"too costly"}` |
+| `GET /api/analyses/{jobId}` | Job status (`RUNNING` / `WAITING_APPROVAL` / `DONE` / `STOPPED` / `FAILED`), token usage, error, all analysis graph nodes |
 | `GET /api/analyses/{jobId}/findings?status=` | Findings (CWE, severity, confidence, evidence code locations, verification result). Filter with `status`: `OPEN` (pending verification) / `CONFIRMED` / `REJECTED` / `UNCERTAIN` |
 | `POST /api/analyses/{jobId}/verify` | Re-verify pending findings (finished jobs only; 400 while running) |
 | `POST /api/analyses/{jobId}/findings/{findingId}/review` | Record a human review. `{"decision":"FALSE_POSITIVE","comment":"test code"}` (`ACCEPTED` / `FALSE_POSITIVE` / `FIXED` / `WONT_FIX`) |
@@ -474,6 +478,9 @@ AnalysisService.start()     creates the GOAL. With paths, one INTENTION per path
   ▼  if planner=llm
 Planner round 1             AgentLoop(Opus, planning tools) → add_intention creates INTENTIONs, "planning round 1 conclusion" FACT
   │
+  ▼  if requireApproval
+WAITING_APPROVAL            job pauses (no thread, no tokens) until POST /approve (drop tasks → SKIPPED) or POST /reject (→ STOPPED)
+  │
   ▼  N Workers (default 3) start at once on virtual threads
 claimNextIntention()        moves one OPEN task whose prerequisites (DEPENDS_ON) are done to CLAIMED (SELECT ... FOR UPDATE SKIP LOCKED)
   ▼
@@ -487,6 +494,7 @@ failBlockedIntentions()     marks tasks FAILED that can never start because a pr
   │
   ▼  if planner=llm, rounds remain and finish_planning has not been called
 Planner round N             reads results with get_plan → adds follow-up tasks (Workers run again if any) / finish_planning
+  │                         new tasks wait for approval again if requireApproval
   │
   ▼  when there is nothing more to do
 VerificationService         runs a Verifier agent for each pending (OPEN) FINDING (Opus, read-only tools + submit_verdict)
@@ -695,6 +703,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 
 ### 에이전트 분석 (구현됨)
 
+- **사람 승인 (선택, `requireApproval`)**: 계획이 나올 때마다(`paths`의 할 일 목록, 또는 할 일을 더한 Planner 회차마다) Worker를 돌리기 전에 작업을 `WAITING_APPROVAL`로 멈춘다. 사람이 동의하기 전에는 토큰을 쓰지 않는다. 승인하면 이어서 진행하고(빼고 싶은 할 일은 `SKIPPED`가 되며, 거기에 의존하던 할 일은 실패로 정리), 거절하면 작업을 멈춘다. 결정은 목표 노드의 `props.approvals`에 남는다. 대기 상태는 DB에 저장돼서 서버를 다시 켜도 그대로다.
 - **할 일 생성**: 두 가지 방식 중 고른다 (`planner`).
   - `llm` (기본): **Planner 에이전트**(기본 Claude Opus 5.5)가 할 일(INTENTION)을 공유 할 일 목록에 만든다.
     - **1회차**: 진입점 → 위험 지점 경로와 진입점 목록을 보고 계획한다. 경로가 없어도 문제가 될 수 있는 일도 할 일로 만든다.
@@ -765,7 +774,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 7 | 보고서 (SARIF 2.1.0, HTML), 사람 검토 API | ✅ 완료 |
 | 8 | 웹 UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)) | ✅ 완료 |
 | 8-1 | 실시간 진행 상황 (SSE, 끊기면 2초 폴링) | ✅ 완료 |
-| 8-2 | 사람 승인 단계 | ⬜ 예정 |
+| 8-2 | 사람 승인 단계: 계획이 나올 때마다 Worker 실행 전에 승인(할 일 빼기 가능) 또는 거절 | ✅ 완료 |
 | 9 | Docker Compose 원클릭 실행 (PostgreSQL + 백엔드 + 웹 화면), GitHub Actions로 확인 | ✅ 완료 |
 
 ---
@@ -892,6 +901,7 @@ API 키·비밀번호 같은 비밀 값은 `application.yml`에 **자리만** �
 | `codeagent.agent.workers` | `3` | 분석 작업 하나에서 동시에 도는 Worker 수. API 요청 한도(분당 요청·토큰)에 맞춰 조절 |
 | `codeagent.agent.planner` | `llm` | 요청에서 정하지 않았을 때의 할 일 생성 방식 (`llm` / `paths`) |
 | `codeagent.agent.planner-rounds` | `3` | Planner가 할 일을 정하는 최대 회차 |
+| `codeagent.agent.require-approval` | `false` | `requireApproval` 기본값. Worker를 돌리기 전에 계획마다 사람 승인을 기다림 |
 
 시스템 프롬프트(`agent/PlannerPrompts.java`, `agent/WorkerPrompts.java`, `agent/VerifierPrompts.java`)는 회차·할 일마다 같아서 프롬프트 캐시가 걸려 있다.
 
@@ -972,9 +982,11 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 
 | API | 설명 |
 |---|---|
-| `POST /api/projects/{id}/analyses` | 분석 시작. `planner`(`llm` / `paths`), `maxIntentions`(1~100, 할 일 수 상한), `budgetTokens`(1만 이상) |
+| `POST /api/projects/{id}/analyses` | 분석 시작. `planner`(`llm` / `paths`), `maxIntentions`(1~100, 할 일 수 상한), `budgetTokens`(1만 이상), `requireApproval`(계획마다 사람 승인 기다리기) |
 | `GET /api/projects/{id}/analyses` | 프로젝트의 분석 작업 목록 (최신순). 작업마다 할 일 수, 끝난 할 일 수, 발견 상태별 개수(`OPEN` / `CONFIRMED` / `REJECTED` / `UNCERTAIN`) |
-| `GET /api/analyses/{jobId}` | 작업 상태(`RUNNING` / `DONE` / `STOPPED` / `FAILED`), 토큰 사용량, 오류, 분석 그래프 노드 전체 |
+| `POST /api/analyses/{jobId}/approve` | `WAITING_APPROVAL` 작업의 계획을 승인하고 이어서 진행. `{"skipIntentionIds":[12],"comment":"범위 밖"}`로 할 일을 뺄 수 있음 (승인 대기가 아니면 400) |
+| `POST /api/analyses/{jobId}/reject` | 계획을 거절하고 작업을 멈춤(`STOPPED`). 남은 할 일은 건너뜀. `{"comment":"비용이 큼"}` |
+| `GET /api/analyses/{jobId}` | 작업 상태(`RUNNING` / `WAITING_APPROVAL` / `DONE` / `STOPPED` / `FAILED`), 토큰 사용량, 오류, 분석 그래프 노드 전체 |
 | `GET /api/analyses/{jobId}/findings?status=` | 발견 목록 (CWE, 심각도, 확신도, 근거 코드 위치, 검증 결과). `status`로 거르기: `OPEN`(검증 대기) / `CONFIRMED` / `REJECTED` / `UNCERTAIN` |
 | `POST /api/analyses/{jobId}/verify` | 검증 대기 발견을 다시 검증 (끝난 작업만, 진행 중이면 400) |
 | `POST /api/analyses/{jobId}/findings/{findingId}/review` | 사람 검토 기록. `{"decision":"FALSE_POSITIVE","comment":"테스트 코드"}` (`ACCEPTED` / `FALSE_POSITIVE` / `FIXED` / `WONT_FIX`) |
@@ -1088,6 +1100,9 @@ AnalysisService.start()     GOAL 생성. paths 면 경로마다 INTENTION 생성
   ▼  planner=llm 이면
 Planner 1회차               AgentLoop(Opus, 계획 도구) → add_intention 으로 INTENTION 생성, "계획 1회차 결론" FACT
   │
+  ▼  requireApproval 이면
+WAITING_APPROVAL            POST /approve(할 일 빼기 → SKIPPED) 또는 POST /reject(→ STOPPED)까지 멈춤 (스레드도 토큰도 쓰지 않음)
+  │
   ▼  가상 스레드에서 Worker N개(기본 3) 동시 시작
 claimNextIntention()        선행 할 일(DEPENDS_ON)이 끝난 OPEN 할 일 하나를 CLAIMED로 (SELECT ... FOR UPDATE SKIP LOCKED)
   ▼
@@ -1101,6 +1116,7 @@ failBlockedIntentions()     선행 할 일이 실패해 시작할 수 없는 할
   │
   ▼  planner=llm 이고 회차가 남았고 finish_planning 전이면
 Planner N회차               get_plan 으로 결과 확인 → 후속 할 일 추가 (있으면 Worker 다시 실행) / finish_planning
+  │                         requireApproval 이면 새 할 일은 다시 승인을 기다림
   │
   ▼  더 할 일이 없으면
 VerificationService         검증 대기(OPEN) FINDING마다 Verifier 에이전트 실행 (Opus, 읽기 전용 도구 + submit_verdict)

@@ -19,6 +19,7 @@ import com.codeagent.analysisgraph.domain.AnalysisEdgeKind;
 import com.codeagent.analysisgraph.domain.AnalysisNode;
 import com.codeagent.analysisgraph.domain.AnalysisNodeKind;
 import com.codeagent.analysisgraph.domain.AnalysisNodeRepository;
+import com.codeagent.analysisgraph.domain.AnalysisNodeStatus;
 import com.codeagent.codegraph.query.CodeGraphQuery;
 import com.codeagent.codegraph.query.CodeGraphQuery.CodeNodeView;
 import com.codeagent.codegraph.query.CodeGraphQuery.SinkPathView;
@@ -111,8 +112,10 @@ public class AnalysisService {
      * @param maxIntentions 할 일 수 상한 (경로 계획이면 조사할 경로 수)
      * @param budgetTokens  작업 전체 토큰 예산
      * @param planner       할 일을 만드는 방식
+     * @param requireApproval true 면 계획(할 일 목록)이 나올 때마다 사람이 승인해야 Worker 가 돈다
      */
-    public AnalysisJob start(Long projectId, int maxIntentions, long budgetTokens, PlannerMode planner) {
+    public AnalysisJob start(Long projectId, int maxIntentions, long budgetTokens, PlannerMode planner,
+                             boolean requireApproval) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new NoSuchElementException("프로젝트 없음: " + projectId));
         List<SinkPathView> paths = planner == PlannerMode.PATHS
@@ -134,6 +137,9 @@ public class AnalysisService {
         goalProps.put("planner", planner.name());
         goalProps.put("maxIntentions", maxIntentions);
         goalProps.put("plannerRound", 0);
+        goalProps.put("requireApproval", requireApproval);
+        // 승인한 계획 회차. 경로 계획은 0회차 계획(만든 경로 할 일)을 승인받는다
+        goalProps.put("approvedRound", -1);
         AnalysisNode goal = analysisGraph.addNode(job.getId(), AnalysisNodeKind.GOAL, project.getName() + " 보안 취약점 분석",
                 planner == PlannerMode.LLM
                         ? "계획 담당이 할 일을 정함 (최대 " + agentProperties.plannerRounds() + "회차, 할 일 상한 " + maxIntentions + "개)"
@@ -170,31 +176,140 @@ public class AnalysisService {
      * 계획 → 실행 → (계획 → 실행)… → 검증. 경로 계획이면 계획 단계 없이 실행부터 한다.
      */
     private void runJob(Long jobId, Project project, Path repoRoot, Long goalId, PlannerMode planner) {
+        guard(jobId, () -> {
+            if (planner == PlannerMode.LLM) {
+                Stop stop = runPlanner(jobId, project, repoRoot, goalId, 1);
+                if (stop != null) {
+                    analysisGraph.complete(goalId);
+                    finish(jobId, stop.status(), stop.error());
+                    return;
+                }
+            }
+            advance(jobId, project, repoRoot, goalId, planner);
+        });
+    }
+
+    /**
+     * 지금 계획부터 끝까지 진행한다: (승인) → 실행 → 계획 다음 회차 → (승인) → … → 검증.
+     * 승인이 필요하면 작업을 WAITING_APPROVAL 로 두고 돌아간다. {@link #approve} 가 이 메서드로 이어서 진행한다.
+     */
+    private void advance(Long jobId, Project project, Path repoRoot, Long goalId, PlannerMode planner)
+            throws InterruptedException, ExecutionException {
+        if (pauseForApproval(jobId, goalId)) {
+            return;
+        }
+        Stop stop;
+        while (true) {
+            stop = runWorkers(jobId, project.getId(), repoRoot);
+            int round = plannerRound(goalId);
+            if (stop != null || planner != PlannerMode.LLM || round >= agentProperties.plannerRounds() || planningFinished(goalId)) {
+                break;
+            }
+            long before = countIntentions(jobId);
+            stop = runPlanner(jobId, project, repoRoot, goalId, round + 1);
+            if (stop != null || countIntentions(jobId) == before) {
+                break; // 계획 담당이 더 만들 할 일이 없다고 판단함
+            }
+            if (pauseForApproval(jobId, goalId)) {
+                return;
+            }
+        }
+        if (planner == PlannerMode.LLM) {
+            analysisGraph.complete(goalId);
+        }
+        if (stop != null) {
+            finish(jobId, stop.status(), stop.error());
+        } else {
+            runVerification(jobId, project.getId(), repoRoot);
+        }
+    }
+
+    /** 승인이 필요하고 아직 승인받지 않은 회차의 할 일이 남아 있으면 작업을 승인 대기로 둔다 */
+    private boolean pauseForApproval(Long jobId, Long goalId) {
+        AnalysisNode goal = nodeRepository.findById(goalId).orElseThrow();
+        Map<String, Object> props = analysisGraph.props(goal);
+        boolean required = Boolean.TRUE.equals(props.get("requireApproval"));
+        int approved = ((Number) props.getOrDefault("approvedRound", -1)).intValue();
+        if (!required || approved >= plannerRound(goalId) || openIntentions(jobId).isEmpty()) {
+            return false;
+        }
+        jobRepository.transition(jobId, JobStatus.RUNNING, JobStatus.WAITING_APPROVAL);
+        events.changed(jobId, "job");
+        log.info("분석 작업 #{} 계획 {}회차 승인 대기 (할 일 {}개)", jobId, plannerRound(goalId), openIntentions(jobId).size());
+        return true;
+    }
+
+    /**
+     * 승인 대기 중인 계획을 승인하고 이어서 진행한다.
+     *
+     * @param skipIntentionIds 실행하지 않을 할 일 (대기 중인 할 일만)
+     */
+    public AnalysisJob approve(Long jobId, List<Long> skipIntentionIds, String comment) {
+        AnalysisJob job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new NoSuchElementException("분석 작업 없음: " + jobId));
+        AnalysisNode goal = goalOf(jobId);
+        Set<Long> open = openIntentions(jobId).stream().map(AnalysisNode::getId).collect(java.util.stream.Collectors.toSet());
+        List<Long> skip = skipIntentionIds == null ? List.of() : List.copyOf(new java.util.LinkedHashSet<>(skipIntentionIds));
+        for (Long id : skip) {
+            if (!open.contains(id)) {
+                throw new IllegalArgumentException("이 작업의 대기 중인 할 일이 아님: " + id);
+            }
+        }
+        if (jobRepository.transition(jobId, JobStatus.WAITING_APPROVAL, JobStatus.RUNNING) == 0) {
+            throw new IllegalArgumentException("승인 대기 중인 작업이 아님: " + jobId + " (" + job.getStatus() + ")");
+        }
+        skip.forEach(analysisGraph::skip);
+        recordDecision(goal.getId(), "APPROVED", skip, comment);
+        events.changed(jobId, "job");
+        log.info("분석 작업 #{} 계획 승인 (뺀 할 일 {}개)", jobId, skip.size());
+
+        Project project = projectRepository.findById(job.getProject().getId()).orElseThrow();
+        PlannerMode planner = PlannerMode.valueOf((String) analysisGraph.props(goal).get("planner"));
+        executor.submit(() -> guard(jobId, () -> advance(jobId, project, Path.of(project.getRepoPath()), goal.getId(), planner)));
+        return jobRepository.findById(jobId).orElseThrow();
+    }
+
+    /** 승인 대기 중인 계획을 거절하고 작업을 멈춘다. 남은 할 일은 건너뛴다 */
+    public AnalysisJob reject(Long jobId, String comment) {
+        jobRepository.findById(jobId).orElseThrow(() -> new NoSuchElementException("분석 작업 없음: " + jobId));
+        AnalysisNode goal = goalOf(jobId);
+        if (jobRepository.transition(jobId, JobStatus.WAITING_APPROVAL, JobStatus.STOPPED) == 0) {
+            throw new IllegalArgumentException("승인 대기 중인 작업이 아님: " + jobId);
+        }
+        List<Long> skipped = openIntentions(jobId).stream().map(AnalysisNode::getId).toList();
+        skipped.forEach(analysisGraph::skip);
+        recordDecision(goal.getId(), "REJECTED", skipped, comment);
+        analysisGraph.complete(goal.getId());
+        finish(jobId, JobStatus.STOPPED, "사람이 계획을 거절함" + (comment == null || comment.isBlank() ? "" : ": " + comment.strip()));
+        return jobRepository.findById(jobId).orElseThrow();
+    }
+
+    /** 승인·거절 기록을 목표 props.approvals 에 남기고, 승인한 회차를 올린다 */
+    private void recordDecision(Long goalId, String decision, List<Long> skipped, String comment) {
+        analysisGraph.updateProps(goalId, props -> {
+            int round = ((Number) props.getOrDefault("plannerRound", 0)).intValue();
+            props.put("approvedRound", round);
+            List<Object> approvals = new ArrayList<>(props.get("approvals") instanceof List<?> list ? list : List.of());
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("round", round);
+            entry.put("decision", decision);
+            entry.put("skipped", skipped);
+            entry.put("comment", comment == null || comment.isBlank() ? null : comment.strip());
+            entry.put("at", OffsetDateTime.now().toString());
+            approvals.add(entry);
+            props.put("approvals", approvals);
+        });
+    }
+
+    @FunctionalInterface
+    private interface JobStep {
+        void run() throws InterruptedException, ExecutionException;
+    }
+
+    /** 백그라운드 단계에서 난 오류로 작업을 실패 처리한다 */
+    private void guard(Long jobId, JobStep step) {
         try {
-            int round = 0;
-            Stop stop = null;
-            if (planner == PlannerMode.LLM) {
-                stop = runPlanner(jobId, project, repoRoot, goalId, ++round);
-            }
-            while (stop == null) {
-                stop = runWorkers(jobId, project.getId(), repoRoot);
-                if (stop != null || planner != PlannerMode.LLM || round >= agentProperties.plannerRounds() || planningFinished(goalId)) {
-                    break;
-                }
-                long before = countIntentions(jobId);
-                stop = runPlanner(jobId, project, repoRoot, goalId, ++round);
-                if (stop == null && countIntentions(jobId) == before) {
-                    break; // 계획 담당이 더 만들 할 일이 없다고 판단함
-                }
-            }
-            if (planner == PlannerMode.LLM) {
-                analysisGraph.complete(goalId);
-            }
-            if (stop != null) {
-                finish(jobId, stop.status(), stop.error());
-            } else {
-                runVerification(jobId, project.getId(), repoRoot);
-            }
+            step.run();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             finish(jobId, JobStatus.FAILED, "중단됨");
@@ -202,6 +317,25 @@ public class AnalysisService {
             log.error("분석 작업 #{} 실패", jobId, e);
             finish(jobId, JobStatus.FAILED, e.getMessage());
         }
+    }
+
+    private AnalysisNode goalOf(Long jobId) {
+        return nodeRepository.findByJobIdOrderById(jobId).stream()
+                .filter(n -> n.getKind() == AnalysisNodeKind.GOAL)
+                .findFirst()
+                .orElseThrow(() -> new NoSuchElementException("분석 작업의 목표 노드 없음: " + jobId));
+    }
+
+    private List<AnalysisNode> openIntentions(Long jobId) {
+        return nodeRepository.findByJobIdOrderById(jobId).stream()
+                .filter(n -> n.getKind() == AnalysisNodeKind.INTENTION && n.getStatus() == AnalysisNodeStatus.OPEN)
+                .toList();
+    }
+
+    private int plannerRound(Long goalId) {
+        return nodeRepository.findById(goalId)
+                .map(goal -> ((Number) analysisGraph.props(goal).getOrDefault("plannerRound", 0)).intValue())
+                .orElse(0);
     }
 
     /** 계획 담당 한 회차. 결론은 목표 아래 FACT("계획 N회차 결론")로 남긴다 */
@@ -301,7 +435,7 @@ public class AnalysisService {
     public AnalysisJob verify(Long jobId) {
         AnalysisJob job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new NoSuchElementException("분석 작업 없음: " + jobId));
-        if (job.getStatus() == JobStatus.RUNNING) {
+        if (job.getStatus() == JobStatus.RUNNING || job.getStatus() == JobStatus.WAITING_APPROVAL) {
             throw new IllegalArgumentException("분석 작업이 아직 진행 중임: " + jobId);
         }
         Project project = projectRepository.findById(job.getProject().getId()).orElseThrow();

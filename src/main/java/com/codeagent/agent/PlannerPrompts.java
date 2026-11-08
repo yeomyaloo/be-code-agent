@@ -52,6 +52,7 @@ public final class PlannerPrompts {
                 계획 %d회차 (최대 %d회차). 할 일 %d / 상한 %d개.
 
                 지난 회차의 할 일이 모두 끝났습니다. get_plan 으로 결과를 확인하고, 후속 조사가 필요하면 할 일을 더하고 아니면 finish_planning 으로 끝내세요.
+                사람이 승인 단계에서 뺀 할 일("사람이 뺌")은 같은 내용으로 다시 만들지 마세요.
                 %s
                 """.formatted(projectName, round, maxRounds, existingIntentions, maxIntentions,
                 round == maxRounds ? "이번이 마지막 회차입니다. 여기서 만든 할 일이 끝나면 바로 검증 단계로 넘어갑니다." : "");

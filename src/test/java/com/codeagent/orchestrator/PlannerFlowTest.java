@@ -90,7 +90,7 @@ class PlannerFlowTest {
             return new AgentRun(Outcome.COMPLETED, "판정: 취약하지 않음", 2, 80, 40, 0, null);
         });
 
-        AnalysisJob job = analysisService.start(project.getId(), 3, 1_000_000, PlannerMode.LLM);
+        AnalysisJob job = analysisService.start(project.getId(), 3, 1_000_000, PlannerMode.LLM, false);
         AnalysisJob finished = waitUntilFinished(job.getId());
 
         assertThat(finished.getStatus()).isEqualTo(JobStatus.DONE);
@@ -133,7 +133,7 @@ class PlannerFlowTest {
             return new AgentRun(Outcome.STEP_LIMIT, "", 40, 10, 5, 0, null);
         });
 
-        AnalysisJob job = analysisService.start(project.getId(), 5, 1_000_000, PlannerMode.LLM);
+        AnalysisJob job = analysisService.start(project.getId(), 5, 1_000_000, PlannerMode.LLM, false);
         AnalysisJob finished = waitUntilFinished(job.getId());
 
         assertThat(finished.getStatus()).isEqualTo(JobStatus.DONE);

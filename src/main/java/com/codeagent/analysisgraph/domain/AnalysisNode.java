@@ -58,6 +58,10 @@ public class AnalysisNode {
         this.status = AnalysisNodeStatus.FAILED;
     }
 
+    public void skip() {
+        this.status = AnalysisNodeStatus.SKIPPED;
+    }
+
     public void updateProps(String props) {
         this.props = props;
     }

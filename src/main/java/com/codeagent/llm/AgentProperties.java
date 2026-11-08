@@ -8,9 +8,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param workers       분석 작업 하나에서 동시에 도는 실행 담당 수
  * @param planner       요청에서 정하지 않았을 때 쓰는 계획 방식
  * @param plannerRounds LLM 계획 담당이 할 일을 정하는 최대 회차 (1회차 + 결과를 보고 보완하는 회차)
+ * @param requireApproval 요청에서 정하지 않았을 때, Worker 를 돌리기 전에 사람이 계획을 승인해야 하는지
  */
 @ConfigurationProperties("codeagent.agent")
-public record AgentProperties(int maxSteps, int workers, PlannerMode planner, int plannerRounds) {
+public record AgentProperties(int maxSteps, int workers, PlannerMode planner, int plannerRounds, boolean requireApproval) {
 
     public AgentProperties {
         if (workers < 1) {

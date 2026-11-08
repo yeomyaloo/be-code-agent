@@ -30,6 +30,16 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
             """)
     void addUsage(Long jobId, long inputTokens, long outputTokens);
 
+    /**
+     * 상태가 from 일 때만 to 로 바꾼다 (승인·거절이 동시에 와도 한 번만 처리되게).
+     *
+     * @return 바뀐 행 수 (0 이면 상태가 from 이 아니었음)
+     */
+    @Modifying
+    @Transactional
+    @Query("update AnalysisJob j set j.status = :to where j.id = :jobId and j.status = :from")
+    int transition(Long jobId, JobStatus from, JobStatus to);
+
     /** 작업을 끝낸다. 사용량 칸은 건드리지 않는다 */
     @Modifying
     @Transactional

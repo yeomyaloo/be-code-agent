@@ -11,7 +11,7 @@ Java/Spring 소스코드를 정적 파싱해 코드 그래프를 만들고, Clau
 ```
 
 - Windows PowerShell에서는 `.\gradlew.bat`.
-- DB가 필요한 테스트: `CodeAgentApplicationTests`, `CodeGraphReindexTest`, `AnalysisFlowTest`, `PlannerFlowTest`, `ReportTest`, `AnalysisListTest`. API 키는 어떤 테스트에도 필요 없다.
+- DB가 필요한 테스트: `CodeAgentApplicationTests`, `CodeGraphReindexTest`, `AnalysisFlowTest`, `PlannerFlowTest`, `ApprovalFlowTest`, `ReportTest`, `AnalysisListTest`, `AnalysisEventsTest`. API 키는 어떤 테스트에도 필요 없다.
 - 테스트는 `test` 프로필(build.gradle 이 켬)로 돌아서 개발 DB의 `public` 스키마가 아니라 `codeagent_test` 스키마를 쓴다(`src/test/resources/application-test.yml`). 스프링 컨텍스트가 뜰 때마다 그 스키마를 비우고 다시 만든다(`TestDatabaseConfig`). 다른 DB 를 쓰려면 `TEST_DB_URL`.
 - API 키와 DB 비밀번호는 `src/main/resources/application-local.yml`(git 제외)에 둔다. 예시는 `application-local.yml.example`.
 
@@ -28,6 +28,7 @@ Java/Spring 소스코드를 정적 파싱해 코드 그래프를 만들고, Clau
 
 - Claude 호출은 `AgentLoop.run()` 한 곳에서만 한다. 새 역할은 `AgentLoop`에 프롬프트와 도구 목록만 다르게 넘겨 만든다.
 - Planner 의 `ToolContext.intentionId` 는 목표(GOAL) 노드 id 다. 회차·상한·종료 여부는 목표 props(`plannerRound`, `maxIntentions`, `planningFinished`)에 둔다.
+- 사람 승인: 목표 props `requireApproval`, `approvedRound`, `approvals`. 승인이 필요하면 `AnalysisService.pauseForApproval` 이 작업을 `WAITING_APPROVAL` 로 두고 스레드를 끝낸다. `approve()` 가 `advance()` 로 이어서 진행한다. 상태 전이는 `AnalysisJobRepository.transition`(조건부 update)으로만 한다.
 - 새 도구는 `AgentTool`을 구현한 `@Component`로 추가하고, 쓸 역할의 화이트리스트(`AnalysisService.WORKER_TOOLS`/`PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`)에 이름을 넣는다. 입력 오류는 `ToolInputException`으로 던진다(Claude에게 오류로 전달됨).
 - 파일 접근 도구는 반드시 `RepoPaths.resolve()`로 경로를 검사한다(저장소 밖 접근 차단).
 - 위험 지점 규칙은 `codegraph/ingest/SinkRules.java`, 진입점 탐지는 `EntryPointDetector.java`.

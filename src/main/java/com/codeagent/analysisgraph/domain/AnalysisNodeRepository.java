@@ -42,7 +42,7 @@ public interface AnalysisNodeRepository extends JpaRepository<AnalysisNode, Long
 
     List<AnalysisNode> findByJobIdOrderById(Long jobId);
 
-    /** 선행 할 일(DEPENDS_ON) 중 하나라도 실패한 OPEN 할 일을 실패로 바꾼다. 한 단계씩만 처리한다 */
+    /** 선행 할 일(DEPENDS_ON) 중 하나라도 실패했거나 건너뛴 OPEN 할 일을 실패로 바꾼다. 한 단계씩만 처리한다 */
     @Modifying
     @Transactional
     @Query(nativeQuery = true, value = """
@@ -51,7 +51,7 @@ public interface AnalysisNodeRepository extends JpaRepository<AnalysisNode, Long
               and exists (
                   select 1 from analysis_edge e
                   join analysis_node d on d.id = e.dst_id
-                  where e.src_id = n.id and e.kind = 'DEPENDS_ON' and d.status = 'FAILED')
+                  where e.src_id = n.id and e.kind = 'DEPENDS_ON' and d.status in ('FAILED', 'SKIPPED'))
             """)
     int failBlockedIntentions(Long jobId);
 
