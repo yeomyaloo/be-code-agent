@@ -172,13 +172,15 @@ public class AnalysisController {
     /**
      * 작업의 변화를 실시간으로 받는다 (Server-Sent Events).
      * 이벤트: ready(연결됨) → change(분석 그래프·기록이 바뀜, data 는 node/trace/verdict/review/job) → finished(끝남, 연결 닫힘).
-     * 이벤트를 받으면 GET /api/analyses/{jobId}, /traces 를 다시 불러온다. 이미 끝난 작업이면 ready·finished 를 보내고 닫는다.
+     * 이벤트를 받으면 GET /api/analyses/{jobId}, /traces 를 다시 불러온다. 이미 끝난 작업이면 ready·finished 를 보내고 닫는다. 승인 대기(WAITING_APPROVAL)는 끝난 것이 아니다.
      */
     @GetMapping(value = "/api/analyses/{jobId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<SseEmitter> events(@PathVariable Long jobId) {
         AnalysisJob job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new NoSuchElementException("분석 작업 없음: " + jobId));
-        boolean finished = job.getStatus() != JobStatus.PENDING && job.getStatus() != JobStatus.RUNNING;
+        // 승인 대기 중인 작업도 승인되면 이어서 바뀌므로 연결을 열어 둔다
+        boolean finished = job.getStatus() == JobStatus.DONE || job.getStatus() == JobStatus.STOPPED
+                || job.getStatus() == JobStatus.FAILED;
         return ResponseEntity.ok()
                 // nginx 같은 리버스 프록시가 이벤트를 모아 두지 않고 바로 흘려보내게 한다 (Docker 의 웹 화면)
                 .header("X-Accel-Buffering", "no")
