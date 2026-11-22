@@ -3,7 +3,8 @@ package com.codeagent.api;
 import com.codeagent.codegraph.ingest.CodeGraphIndexer;
 import com.codeagent.codegraph.ingest.CodeGraphIndexer.IndexResult;
 import com.codeagent.dependency.DependencyService;
-import com.codeagent.dependency.DependencyService.DependencyReport;
+import com.codeagent.dependency.DependencyService.ScanSummary;
+import com.codeagent.dependency.DependencyService.ScanView;
 import com.codeagent.project.Project;
 import com.codeagent.project.ProjectRepository;
 import com.codeagent.project.ProjectService;
@@ -52,12 +53,25 @@ public class ProjectController {
     }
 
     /**
-     * 빌드 파일의 라이브러리와 알려진 취약점(OSV). 라이브러리 좌표와 버전만 OSV 로 보내고 소스코드는 보내지 않는다.
-     * OSV 에 묻지 못하면 checked=false 와 error 로 알린다.
+     * 빌드 파일의 라이브러리를 검사하고(OSV 알려진 취약점) 기록으로 남긴다. 지난 검사와 비교한 결과(diff)를 함께 돌려준다.
+     * 라이브러리 좌표와 버전만 OSV 로 보내고 소스코드는 보내지 않는다. OSV 에 묻지 못하면 report.checked=false 와 error 로 알린다.
      */
-    @GetMapping("/{id}/dependencies")
-    public DependencyReport dependencies(@PathVariable Long id) {
-        return dependencyService.check(id);
+    @PostMapping("/{id}/dependency-scans")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ScanView scanDependencies(@PathVariable Long id) {
+        return dependencyService.scan(id);
+    }
+
+    /** 라이브러리 검사 기록 (최근 50개) */
+    @GetMapping("/{id}/dependency-scans")
+    public List<ScanSummary> dependencyScans(@PathVariable Long id) {
+        return dependencyService.history(id);
+    }
+
+    /** 저장한 검사 하나와 그 앞 검사와의 비교 */
+    @GetMapping("/{id}/dependency-scans/{scanId}")
+    public ScanView dependencyScan(@PathVariable Long id, @PathVariable Long scanId) {
+        return dependencyService.get(id, scanId);
     }
 
     @PostMapping

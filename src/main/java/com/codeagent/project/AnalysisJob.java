@@ -37,9 +37,17 @@ public class AnalysisJob {
 
     private OffsetDateTime finishedAt;
 
+    /** 분석한 커밋. 시작할 때 저장소의 커밋을 적어 둔다 (모르면 null) */
+    private String commitSha;
+
     public AnalysisJob(Project project, Long budgetTokens) {
+        this(project, budgetTokens, null);
+    }
+
+    public AnalysisJob(Project project, Long budgetTokens, String commitSha) {
         this.project = project;
         this.budgetTokens = budgetTokens;
+        this.commitSha = commitSha;
         this.status = JobStatus.PENDING;
     }
 

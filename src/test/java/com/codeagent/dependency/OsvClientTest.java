@@ -77,7 +77,8 @@ class OsvClientTest {
     @Test
     void 계획_담당에게_취약한_라이브러리를_요약한다() {
         DependencyService service = new DependencyService(Mockito.mock(ProjectRepository.class),
-                new OsvClient(properties(true), JsonMapper.builder().build()), properties(true));
+                new OsvClient(properties(true), JsonMapper.builder().build()), properties(true),
+                null, JsonMapper.builder().build());
 
         DependencyReport report = service.check(Path.of("src/test/resources/fixtures/deps-maven"));
 
@@ -92,7 +93,8 @@ class OsvClientTest {
     void OSV_에_연결하지_못하면_목록만_돌려주고_이유를_알린다() {
         server.stop(0);
         DependencyService service = new DependencyService(Mockito.mock(ProjectRepository.class),
-                new OsvClient(properties(true), JsonMapper.builder().build()), properties(true));
+                new OsvClient(properties(true), JsonMapper.builder().build()), properties(true),
+                null, JsonMapper.builder().build());
 
         DependencyReport report = service.check(Path.of("src/test/resources/fixtures/deps-maven"));
 
@@ -104,7 +106,8 @@ class OsvClientTest {
     @Test
     void 검사를_끄면_OSV_에_묻지_않는다() {
         DependencyService service = new DependencyService(Mockito.mock(ProjectRepository.class),
-                new OsvClient(properties(false), JsonMapper.builder().build()), properties(false));
+                new OsvClient(properties(false), JsonMapper.builder().build()), properties(false),
+                null, JsonMapper.builder().build());
 
         DependencyReport report = service.check(Path.of("src/test/resources/fixtures/deps-maven"));
 

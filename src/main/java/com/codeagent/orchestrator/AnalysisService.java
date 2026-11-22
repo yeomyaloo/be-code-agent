@@ -132,7 +132,7 @@ public class AnalysisService {
             throw new IllegalArgumentException("코드 그래프에 진입점도 위험 지점도 없음. 코드 그래프를 먼저 만들 것");
         }
 
-        AnalysisJob job = new AnalysisJob(project, budgetTokens);
+        AnalysisJob job = new AnalysisJob(project, budgetTokens, project.currentCommit());
         job.start();
         jobRepository.save(job);
 

@@ -89,7 +89,7 @@
   <line x1="370" y1="546" x2="370" y2="562" class="edge" marker-end="url(#arrow)"/>
   <rect x="60" y="564" width="620" height="56" rx="10" fill="#eefbf1" stroke="#1a7f37" stroke-width="1.4"/>
   <text x="78" y="588" class="h">PostgreSQL</text>
-  <text x="78" y="608" class="t">코드 그래프  |  분석 그래프 (목표 · 할 일 · 사실 · 발견)  |  실행 기록</text>
+  <text x="78" y="608" class="t">코드 그래프  |  분석 그래프 (목표 · 할 일 · 사실 · 발견)  |  실행 기록  |  라이브러리 검사 기록</text>
 
   <!-- Claude -->
   <rect x="770" y="300" width="220" height="160" rx="14" fill="#fff4e5" stroke="#c2410c" stroke-width="1.6"/>

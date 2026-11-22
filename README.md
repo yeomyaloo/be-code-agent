@@ -81,7 +81,9 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
   | WEAK_RANDOM | CWE-330 | `new Random()`, `Math.random`, `RandomStringUtils.random*` (only a problem for tokens, reset codes, session values) |
   | IDOR | CWE-639 | `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById` on project interfaces that extend a Spring Data repository (`JpaRepository`, `CrudRepository`, … directly or through a project base interface). Owner-scoped queries such as `findByIdAndUser` are not flagged. These are candidates: the worker checks whether the code compares the requesting user with the data owner |
 
-- **Dependency vulnerabilities (OWASP A03)**: reads libraries and versions from `pom.xml` (properties, Spring Boot parent), `build.gradle(.kts)` (variables, Spring Boot plugin), `gradle/libs.versions.toml` and `gradle.lockfile`, then asks the public [OSV](https://osv.dev) database for known vulnerabilities (CVE/GHSA, severity, fixed versions). Only library coordinates and versions are sent, never source code; turn it off with `codeagent.dependencies.osv-enabled=false`. Build tools are not run, so transitive dependencies are checked only when a `gradle.lockfile` exists. Shown at `GET /api/projects/{id}/dependencies` and given to the Planner (`check_dependencies`), which turns serious ones into tasks that check whether the vulnerable feature is actually used.
+- **Dependency vulnerabilities (OWASP A03)**: reads libraries and versions from `pom.xml` (properties, Spring Boot parent), `build.gradle(.kts)` (variables, Spring Boot plugin), `gradle/libs.versions.toml` and `gradle.lockfile`, then asks the public [OSV](https://osv.dev) database for known vulnerabilities (CVE/GHSA, severity, fixed versions). Only library coordinates and versions are sent, never source code; turn it off with `codeagent.dependencies.osv-enabled=false`. Build tools are not run, so transitive dependencies are checked only when a `gradle.lockfile` exists. Run with `POST /api/projects/{id}/dependency-scans` and given to the Planner (`check_dependencies`), which turns serious ones into tasks that check whether the vulnerable feature is actually used.
+- **Dependency scan history**: every scan is saved with the commit it checked, and compared with the previous scan: libraries whose version changed, added and removed libraries, new vulnerabilities (a library was added or changed, or a CVE was published since) and resolved ones. The Planner sees the same comparison.
+- **Commit per analysis**: each analysis job records the commit it analyzed when it starts (the last pulled commit for Git URLs, the folder's `.git` HEAD for local paths). The API and the SARIF/HTML reports use the job's commit, so an old result never claims a newer commit.
 - **Entry point → sink path search**: a PostgreSQL recursive CTE extracts "which API reaches which sink through which methods". Calls through interfaces are followed too.
 
 ### Agent analysis (implemented)
@@ -164,6 +166,8 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 9 | One-click Docker Compose setup (PostgreSQL + backend + web UI), checked on GitHub Actions | ✅ Done |
 | 10 | Wider OWASP coverage: XXE, XSS, weak crypto and randomness sinks; Planner checks for authentication, JWT and password storage | ✅ Done |
 | 10-1 | Dependency vulnerabilities (OWASP A03): build file parsing + OSV lookup, `check_dependencies` Planner tool | ✅ Done |
+| 10-2 | Dependency scan history: compare with the previous scan (version changes, new and resolved vulnerabilities) | ✅ Done |
+| 10-3 | Record the analyzed commit on each analysis job | ✅ Done |
 
 ---
 
@@ -355,7 +359,9 @@ The response contains the number of files, classes, methods, entry points and si
 | API | Description |
 |---|---|
 | `GET /api/projects` | Registered repositories |
-| `GET /api/projects/{id}/dependencies` | Libraries from the build files and their known vulnerabilities (OSV). `checked=false` and `error` when OSV could not be asked |
+| `POST /api/projects/{id}/dependency-scans` | Scan the build files' libraries for known vulnerabilities (OSV), save the scan with its commit, and return it with `diff` against the previous scan (`changed`, `added`, `removed`, `newVulnerabilities`, `resolvedVulnerabilities`). `report.checked=false` and `report.error` when OSV could not be asked |
+| `GET /api/projects/{id}/dependency-scans` | Scan history (newest first, up to 50): commit, time, counts |
+| `GET /api/projects/{id}/dependency-scans/{scanId}` | A saved scan and its diff against the scan before it |
 | `GET /api/projects/{id}/code-graph/entry-points` | HTTP entry points |
 | `GET /api/projects/{id}/code-graph/sinks` | Sinks (category, CWE, code snippet, location) |
 | `GET /api/projects/{id}/code-graph/sink-paths?maxDepth=12` | Entry point → sink call paths (max depth 30, at most 500) |
@@ -376,7 +382,7 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 | `GET /api/projects/{id}/analyses` | The project's analysis jobs (newest first). For each job: number of tasks, number of finished tasks, finding counts by status (`OPEN` / `CONFIRMED` / `REJECTED` / `UNCERTAIN`) |
 | `POST /api/analyses/{jobId}/approve` | Approve the plan of a `WAITING_APPROVAL` job and continue. `{"skipIntentionIds":[12],"comment":"out of scope"}` drops tasks (400 if not waiting) |
 | `POST /api/analyses/{jobId}/reject` | Reject the plan and stop the job (`STOPPED`); remaining tasks are skipped. `{"comment":"too costly"}` |
-| `GET /api/analyses/{jobId}` | Job status (`RUNNING` / `WAITING_APPROVAL` / `DONE` / `STOPPED` / `FAILED`), token usage, error, all analysis graph nodes |
+| `GET /api/analyses/{jobId}` | Job status (`RUNNING` / `WAITING_APPROVAL` / `DONE` / `STOPPED` / `FAILED`), analyzed commit (`commitSha`), token usage, error, all analysis graph nodes |
 | `GET /api/analyses/{jobId}/findings?status=` | Findings (CWE, severity, confidence, evidence code locations, verification result). Filter with `status`: `OPEN` (pending verification) / `CONFIRMED` / `REJECTED` / `UNCERTAIN` |
 | `POST /api/analyses/{jobId}/verify` | Re-verify pending findings (finished jobs only; 400 while running) |
 | `POST /api/analyses/{jobId}/findings/{findingId}/review` | Record a human review. `{"decision":"FALSE_POSITIVE","comment":"test code"}` (`ACCEPTED` / `FALSE_POSITIVE` / `FIXED` / `WONT_FIX`) |
@@ -581,7 +587,7 @@ be-code-agent/
 │   │   ├── AnalysisService.java                     creates analysis jobs, alternates Planner rounds ↔ Worker runs, starts verification
 │   │   ├── PlannerMode.java                         task creation mode (llm / paths)
 │   │   └── VerificationService.java                 runs the Verifier for each pending finding
-│   ├── dependency/                                  DependencyScanner (build files), OsvClient (known vulnerabilities), DependencyService
+│   ├── dependency/                                  DependencyScanner (build files), OsvClient (known vulnerabilities), DependencyService, DependencyScan (history), DependencyDiff (comparison)
 │   ├── report/                                      reports: ReportService (collects findings), SarifWriter, HtmlReportWriter
 │   ├── api/                                         REST controllers (projects, code graph, analyses, reports)
 │   └── common/GlobalExceptionHandler.java           maps to 404 / 400 responses
@@ -716,7 +722,9 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
   | WEAK_RANDOM | CWE-330 | `new Random()`, `Math.random`, `RandomStringUtils.random*` (토큰·재설정 코드·세션 값에 쓰일 때만 문제) |
   | IDOR | CWE-639 | Spring Data 저장소(`JpaRepository`, `CrudRepository` 등, 직접 또는 프로젝트 안의 상위 인터페이스를 거쳐 상속)의 `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById`. `findByIdAndUser`처럼 주인 조건이 붙은 쿼리는 잡지 않는다. 후보일 뿐이고, 요청한 사용자와 데이터 소유자를 비교하는지는 Worker가 코드를 읽고 판단한다 |
 
-- **의존성 취약점 (OWASP A03)**: `pom.xml`(속성, Spring Boot 부모), `build.gradle(.kts)`(변수, Spring Boot 플러그인), `gradle/libs.versions.toml`, `gradle.lockfile`에서 라이브러리와 버전을 읽고, 공개 취약점 DB [OSV](https://osv.dev)에 알려진 취약점(CVE·GHSA, 심각도, 고친 버전)을 묻는다. 보내는 건 라이브러리 좌표와 버전뿐이고 소스코드는 보내지 않는다. `codeagent.dependencies.osv-enabled=false`로 끌 수 있다. 빌드 도구를 실행하지 않으므로 전이 의존성은 `gradle.lockfile`이 있을 때만 검사된다. `GET /api/projects/{id}/dependencies`로 보고, Planner(`check_dependencies`)에게도 주어서 심각한 것은 취약한 기능을 실제로 쓰는지 확인하는 할 일이 된다.
+- **의존성 취약점 (OWASP A03)**: `pom.xml`(속성, Spring Boot 부모), `build.gradle(.kts)`(변수, Spring Boot 플러그인), `gradle/libs.versions.toml`, `gradle.lockfile`에서 라이브러리와 버전을 읽고, 공개 취약점 DB [OSV](https://osv.dev)에 알려진 취약점(CVE·GHSA, 심각도, 고친 버전)을 묻는다. 보내는 건 라이브러리 좌표와 버전뿐이고 소스코드는 보내지 않는다. `codeagent.dependencies.osv-enabled=false`로 끌 수 있다. 빌드 도구를 실행하지 않으므로 전이 의존성은 `gradle.lockfile`이 있을 때만 검사된다. `POST /api/projects/{id}/dependency-scans`로 검사하고, Planner(`check_dependencies`)에게도 주어서 심각한 것은 취약한 기능을 실제로 쓰는지 확인하는 할 일이 된다.
+- **의존성 검사 기록**: 검사할 때마다 검사한 커밋과 함께 저장하고 지난 검사와 비교한다. 버전이 바뀐 라이브러리, 추가·제거된 라이브러리, 새 취약점(라이브러리를 넣거나 바꿨거나, 그사이 CVE가 공개됨), 해결된 취약점을 보여준다. Planner도 같은 비교를 본다.
+- **분석 작업별 커밋**: 분석 작업이 시작할 때 분석하는 커밋을 기록한다(Git 주소면 마지막으로 받은 커밋, 폴더 경로면 그 폴더의 `.git` HEAD). API와 SARIF·HTML 보고서는 작업의 커밋을 써서, 예전 결과가 새 커밋을 분석한 것처럼 보이지 않는다.
 - **진입점 → 위험 지점 경로 탐색**: PostgreSQL 재귀 CTE로 "어느 API에서 어느 위험 지점까지 어떤 메서드들을 거쳐 도달하는지"를 뽑는다. 인터페이스를 거치는 호출도 따라간다.
 
 ### 에이전트 분석 (구현됨)
@@ -799,6 +807,8 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 9 | Docker Compose 원클릭 실행 (PostgreSQL + 백엔드 + 웹 화면), GitHub Actions로 확인 | ✅ 완료 |
 | 10 | OWASP 범위 확대: XXE·XSS·약한 암호화·난수 위험 지점, Planner의 인증·JWT·비밀번호 저장 점검 | ✅ 완료 |
 | 10-1 | 의존성 취약점(OWASP A03): 빌드 파일 읽기 + OSV 조회, Planner 도구 `check_dependencies` | ✅ 완료 |
+| 10-2 | 의존성 검사 기록: 지난 검사와 비교 (버전 변경, 새 취약점, 해결된 취약점) | ✅ 완료 |
+| 10-3 | 분석 작업마다 분석한 커밋 기록 | ✅ 완료 |
 
 ---
 
@@ -990,7 +1000,9 @@ curl -X POST localhost:8080/api/projects/1/index
 | API | 설명 |
 |---|---|
 | `GET /api/projects` | 등록된 저장소 목록 |
-| `GET /api/projects/{id}/dependencies` | 빌드 파일의 라이브러리와 알려진 취약점(OSV). OSV에 묻지 못하면 `checked=false`와 `error` |
+| `POST /api/projects/{id}/dependency-scans` | 빌드 파일의 라이브러리를 OSV로 검사하고 커밋과 함께 저장한 뒤, 지난 검사와의 비교(`diff`: `changed`, `added`, `removed`, `newVulnerabilities`, `resolvedVulnerabilities`)와 함께 돌려준다. OSV에 묻지 못하면 `report.checked=false`와 `report.error` |
+| `GET /api/projects/{id}/dependency-scans` | 검사 기록 (최신순, 최대 50개): 커밋, 시각, 개수 |
+| `GET /api/projects/{id}/dependency-scans/{scanId}` | 저장한 검사 하나와 그 앞 검사와의 비교 |
 | `GET /api/projects/{id}/code-graph/entry-points` | HTTP 진입점 |
 | `GET /api/projects/{id}/code-graph/sinks` | 위험 지점 (분류, CWE, 코드 조각, 위치) |
 | `GET /api/projects/{id}/code-graph/sink-paths?maxDepth=12` | 진입점 → 위험 지점 호출 경로 (최대 깊이 30, 최대 500개) |
@@ -1011,7 +1023,7 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 | `GET /api/projects/{id}/analyses` | 프로젝트의 분석 작업 목록 (최신순). 작업마다 할 일 수, 끝난 할 일 수, 발견 상태별 개수(`OPEN` / `CONFIRMED` / `REJECTED` / `UNCERTAIN`) |
 | `POST /api/analyses/{jobId}/approve` | `WAITING_APPROVAL` 작업의 계획을 승인하고 이어서 진행. `{"skipIntentionIds":[12],"comment":"범위 밖"}`로 할 일을 뺄 수 있음 (승인 대기가 아니면 400) |
 | `POST /api/analyses/{jobId}/reject` | 계획을 거절하고 작업을 멈춤(`STOPPED`). 남은 할 일은 건너뜀. `{"comment":"비용이 큼"}` |
-| `GET /api/analyses/{jobId}` | 작업 상태(`RUNNING` / `WAITING_APPROVAL` / `DONE` / `STOPPED` / `FAILED`), 토큰 사용량, 오류, 분석 그래프 노드 전체 |
+| `GET /api/analyses/{jobId}` | 작업 상태(`RUNNING` / `WAITING_APPROVAL` / `DONE` / `STOPPED` / `FAILED`), 분석한 커밋(`commitSha`), 토큰 사용량, 오류, 분석 그래프 노드 전체 |
 | `GET /api/analyses/{jobId}/findings?status=` | 발견 목록 (CWE, 심각도, 확신도, 근거 코드 위치, 검증 결과). `status`로 거르기: `OPEN`(검증 대기) / `CONFIRMED` / `REJECTED` / `UNCERTAIN` |
 | `POST /api/analyses/{jobId}/verify` | 검증 대기 발견을 다시 검증 (끝난 작업만, 진행 중이면 400) |
 | `POST /api/analyses/{jobId}/findings/{findingId}/review` | 사람 검토 기록. `{"decision":"FALSE_POSITIVE","comment":"테스트 코드"}` (`ACCEPTED` / `FALSE_POSITIVE` / `FIXED` / `WONT_FIX`) |
@@ -1216,7 +1228,7 @@ be-code-agent/
 │   │   ├── AnalysisService.java                     분석 작업 생성, Planner 회차 ↔ Worker 실행 반복, 검증 단계 시작
 │   │   ├── PlannerMode.java                         할 일 생성 방식 (llm / paths)
 │   │   └── VerificationService.java                 검증 대기 발견마다 Verifier 실행
-│   ├── dependency/                                  DependencyScanner(빌드 파일 읽기), OsvClient(알려진 취약점), DependencyService
+│   ├── dependency/                                  DependencyScanner(빌드 파일 읽기), OsvClient(알려진 취약점), DependencyService, DependencyScan(기록), DependencyDiff(비교)
 │   ├── report/                                      보고서: ReportService(발견 모으기), SarifWriter, HtmlReportWriter
 │   ├── api/                                         REST 컨트롤러 (프로젝트, 코드 그래프, 분석, 보고서)
 │   └── common/GlobalExceptionHandler.java           404 / 400 응답 변환

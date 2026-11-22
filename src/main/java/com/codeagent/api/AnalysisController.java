@@ -82,12 +82,12 @@ public class AnalysisController {
 
     public record JobView(Long id, Long projectId, String status, Long budgetTokens, long usedTokens,
                           long inputTokens, long outputTokens, String error,
-                          OffsetDateTime startedAt, OffsetDateTime finishedAt) {
+                          OffsetDateTime startedAt, OffsetDateTime finishedAt, String commitSha) {
 
         static JobView from(AnalysisJob job) {
             return new JobView(job.getId(), job.getProject().getId(), job.getStatus().name(), job.getBudgetTokens(),
                     job.getUsedTokens(), job.getInputTokens(), job.getOutputTokens(), job.getError(),
-                    job.getStartedAt(), job.getFinishedAt());
+                    job.getStartedAt(), job.getFinishedAt(), job.getCommitSha());
         }
     }
 

@@ -80,7 +80,7 @@ public class ReportService {
         List<ReportFinding> findings = includeDismissed ? all : all.stream().filter(f -> !f.dismissed()).toList();
 
         return new Report(job.getId(), job.getStatus().name(), project.getName(), project.getGitUrl(),
-                project.getGitBranch(), project.getCommitSha(), job.getUsedTokens(), job.getStartedAt(),
+                project.getGitBranch(), job.getCommitSha() != null ? job.getCommitSha() : project.getCommitSha(), job.getUsedTokens(), job.getStartedAt(),
                 job.getFinishedAt(), OffsetDateTime.now(), findings, (int) all.stream().filter(ReportFinding::dismissed).count());
     }
 

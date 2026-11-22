@@ -1,10 +1,12 @@
 package com.codeagent.project;
 
+import com.codeagent.project.source.GitRevision;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.nio.file.Path;
 import java.time.OffsetDateTime;
 
 @Entity
@@ -58,5 +60,11 @@ public class Project {
         this.gitBranch = branch;
         this.commitSha = commitSha;
         this.syncedAt = OffsetDateTime.now();
+    }
+
+    /** 지금 저장소의 커밋. Git 주소로 등록했으면 마지막으로 받은 커밋, 폴더 경로면 그 폴더의 .git HEAD (없으면 null) */
+    public String currentCommit() {
+        return commitSha != null ? commitSha
+                : GitRevision.head(Path.of(repoPath)).orElse(null);
     }
 }
