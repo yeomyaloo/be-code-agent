@@ -3,6 +3,8 @@ package com.codeagent.codegraph.ingest;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Java/Spring 위험 지점 규칙 목록.
@@ -136,6 +138,42 @@ public final class SinkRules {
      * 남의 데이터를 읽거나 지울 수 있다 (IDOR). findByIdAndUser 처럼 주인 조건이 붙은 쿼리는 여기에 없다.
      */
     private static final Set<String> ID_ACCESS_METHODS = Set.of("findById", "getById", "getReferenceById", "getOne", "deleteById");
+
+    /** MyBatis 매퍼 인터페이스 표시 */
+    public static final String MYBATIS_MAPPER = "org.apache.ibatis.annotations.Mapper";
+
+    /** 요청 본문을 그대로 저장하면 본문의 id 로 남의 데이터를 덮어쓸 수 있는 저장소 메서드 */
+    public static final Set<String> SAVE_METHODS = Set.of("save", "saveAndFlush", "saveAll");
+
+    private static final Pattern DERIVED_QUERY = Pattern.compile(
+            "^(?:find|get|read|query|search|stream|delete|remove|exists)\\w*?By([A-Z]\\w*)$");
+
+    /** IDOR 후보 위험 지점 규칙 (저장소·매퍼의 프로젝트 메서드, 요청 본문 저장) */
+    public static SinkRule idorCandidate(String typeFqn, String method) {
+        return new SinkRule(typeFqn, Set.of(method), "IDOR", "CWE-639");
+    }
+
+    /** id, orderId, userIds 처럼 식별자를 뜻하는 이름 */
+    public static boolean idLikeName(String name) {
+        return name != null && (name.equals("id") || name.equals("ids") || name.matches(".*[a-z0-9]Ids?$"));
+    }
+
+    /**
+     * 파생 쿼리 이름(findByOrderId, deleteByBuyerIdIn)의 조건이 식별자 하나뿐인지.
+     * findByIdAndWriterId 처럼 조건이 여럿이면 주인 조건일 수 있어 후보가 아니다.
+     */
+    public static boolean singleIdCondition(String method) {
+        Matcher m = DERIVED_QUERY.matcher(method);
+        if (!m.matches()) {
+            return false;
+        }
+        String condition = m.group(1).replaceFirst("OrderBy\\w*$", "");
+        if (condition.matches(".*[a-z0-9](And|Or)[A-Z].*")) {
+            return false;
+        }
+        String property = condition.replaceFirst("(In|NotIn|Is|Equals)$", "");
+        return property.equals("Id") || property.matches(".*[a-z0-9]Ids?$");
+    }
 
     /** Spring Data 저장소의 id 접근 호출이면 IDOR 후보 위험 지점 규칙 */
     public static Optional<SinkRule> repositoryIdAccess(String repositoryFqn, String method) {

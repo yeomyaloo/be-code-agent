@@ -1,6 +1,7 @@
 package com.codeagent.codegraph.ingest;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.CallableDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
@@ -103,6 +104,13 @@ public class CodeGraphBuilder {
                     .map(scope -> typeOfScope(scope, caller))
                     .orElse(null);
 
+            // 저장소·매퍼가 프로젝트에 선언한 메서드도 id 하나로 데이터를 다루면 IDOR 후보다
+            Optional<SinkRule> idor = idorCandidate(caller, call, targetType);
+            if (idor.isPresent()) {
+                addSink(caller, call, idor.get(), call.getNameAsString());
+                continue;
+            }
+
             if (call.getScope().isEmpty()) {
                 // 스코프 없는 호출: 자기 클래스 → 바깥 클래스 순으로 찾는다
                 if (linkProjectCall(caller, enclosingTypes(caller), call)) {
@@ -131,6 +139,70 @@ public class CodeGraphBuilder {
             String type = caller.owner().resolver().resolve(creation.getType().getNameWithScope());
             SinkRules.match(type, "<init>").ifPresent(rule -> addSink(caller, creation, rule, "<init>"));
         }
+    }
+
+    /**
+     * IDOR 후보:
+     * - Spring Data 저장소에 선언한 메서드: 조건이 식별자 하나뿐인 파생 쿼리(findByBuyerId), 식별자 인자 하나만 받는 @Query 메서드
+     * - MyBatis 매퍼(@Mapper) 메서드: 식별자 인자 하나만 받는 것 (주인 조건 인자가 같이 있으면 제외)
+     * - Spring Data save 에 @RequestBody·@ModelAttribute 로 받은 객체를 그대로 넘기는 호출 (본문의 id 로 남의 데이터를 덮어씀)
+     */
+    private Optional<SinkRule> idorCandidate(MethodInfo caller, MethodCallExpr call, String targetType) {
+        if (targetType == null) {
+            return Optional.empty();
+        }
+        String method = call.getNameAsString();
+        boolean repository = project.isSpringDataRepository(targetType);
+        boolean mapper = project.type(targetType)
+                .map(t -> t.decl().getAnnotations().stream().anyMatch(a -> isAnnotation(t, a.getNameAsString(), SinkRules.MYBATIS_MAPPER)))
+                .orElse(false);
+        if (!repository && !mapper) {
+            return Optional.empty();
+        }
+        if (repository && SinkRules.SAVE_METHODS.contains(method) && call.getArguments().size() == 1
+                && call.getArgument(0) instanceof NameExpr arg && isRequestBodyParameter(caller, arg.getNameAsString())) {
+            return Optional.of(SinkRules.idorCandidate(targetType, method));
+        }
+        List<MethodInfo> declared = project.findMethods(targetType, method, call.getArguments().size());
+        if (declared.isEmpty()) {
+            return Optional.empty();
+        }
+        CallableDeclaration<?> decl = declared.getFirst().decl();
+        if (decl.getParameters().size() != 1) {
+            return Optional.empty();
+        }
+        Parameter parameter = decl.getParameter(0);
+        boolean idParameter = SinkRules.idLikeName(paramName(parameter));
+        boolean candidate = mapper
+                ? idParameter
+                : SinkRules.singleIdCondition(method) || (decl.getAnnotationByName("Query").isPresent() && idParameter);
+        return candidate ? Optional.of(SinkRules.idorCandidate(targetType, method)) : Optional.empty();
+    }
+
+    /** @Param("orderId") 가 있으면 그 이름, 없으면 파라미터 이름 */
+    private static String paramName(Parameter parameter) {
+        return parameter.getAnnotationByName("Param")
+                .flatMap(a -> a.isSingleMemberAnnotationExpr()
+                        ? Optional.of(a.asSingleMemberAnnotationExpr().getMemberValue())
+                        : a.isNormalAnnotationExpr()
+                        ? a.asNormalAnnotationExpr().getPairs().stream().filter(p -> p.getNameAsString().equals("value")).findFirst().map(p -> p.getValue())
+                        : Optional.empty())
+                .filter(e -> e.isStringLiteralExpr())
+                .map(e -> e.asStringLiteralExpr().asString())
+                .orElse(parameter.getNameAsString());
+    }
+
+    private static boolean isRequestBodyParameter(MethodInfo caller, String name) {
+        return caller.decl().getParameters().stream()
+                .anyMatch(p -> p.getNameAsString().equals(name)
+                        && (p.getAnnotationByName("RequestBody").isPresent() || p.getAnnotationByName("ModelAttribute").isPresent()));
+    }
+
+    private static boolean isAnnotation(TypeInfo type, String simpleOrQualified, String fqn) {
+        if (simpleOrQualified.equals(fqn)) {
+            return true;
+        }
+        return fqn.endsWith("." + simpleOrQualified) && fqn.equals(type.resolver().resolve(simpleOrQualified));
     }
 
     private boolean linkProjectCall(MethodInfo caller, List<String> candidateTypes, MethodCallExpr call) {

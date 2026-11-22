@@ -25,6 +25,8 @@ public final class WorkerPrompts {
             - IDOR(CWE-639) 위험 지점(저장소의 findById·deleteById 등)이면, 경로로 받은 id 의 데이터가 요청한 사용자의 것인지 비교하는 코드가 있는지 봅니다.
               세션·토큰의 사용자 id 와 엔티티 소유자 비교, 주인 조건 쿼리(findByIdAndUser), @PreAuthorize·PermissionEvaluator 가 막는 장치입니다.
               공개 게시글 조회처럼 원래 누구나 봐도 되는 데이터면 취약하지 않습니다.
+              MyBatis 매퍼·@Query 메서드·findByBuyerId 같은 후보도 같습니다. 넘기는 id 가 요청에서 온 값인지(세션·토큰에서 꺼낸 내 id 면 안전), SQL 에 주인 조건이 있는지 봅니다.
+              save 후보(@RequestBody 객체를 그대로 저장)는 본문의 id 로 남의 데이터를 덮어쓸 수 있는지, 저장 전에 기존 데이터의 주인을 확인하는지 봅니다.
             - XXE(CWE-611)면 그 파서(DocumentBuilderFactory, SAXParserFactory, XMLInputFactory, SAXReader 등)에 외부 엔티티를 막는 설정이 있는지 봅니다.
               disallow-doctype-decl=true, external-general-entities=false, XMLConstants.ACCESS_EXTERNAL_DTD="", XMLInputFactory.SUPPORT_DTD=false 가 막는 장치입니다.
             - XSS(CWE-79)면 응답이 HTML 로 해석되는지(Content-Type), 사용자 값을 HtmlUtils.htmlEscape 같은 것으로 이스케이프하는지 봅니다. JSON 응답만 쓰면 보통 XSS 가 아닙니다.

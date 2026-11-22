@@ -79,7 +79,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
   | XSS | CWE-79 | `HttpServletResponse.getWriter` / `getOutputStream` (HTML written directly to the response; templates such as `th:utext` are checked by the Planner) |
   | WEAK_CRYPTO | CWE-327 / CWE-328 | `MessageDigest.getInstance`, `Cipher.getInstance`, `SecretKeyFactory.getInstance`, Spring/Commons `DigestUtils.md5*`/`sha1*` (the worker checks the algorithm and whether it is used for security) |
   | WEAK_RANDOM | CWE-330 | `new Random()`, `Math.random`, `RandomStringUtils.random*` (only a problem for tokens, reset codes, session values) |
-  | IDOR | CWE-639 | `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById` on project interfaces that extend a Spring Data repository (`JpaRepository`, `CrudRepository`, … directly or through a project base interface). Owner-scoped queries such as `findByIdAndUser` are not flagged. These are candidates: the worker checks whether the code compares the requesting user with the data owner |
+  | IDOR | CWE-639 | `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById` on project interfaces that extend a Spring Data repository (`JpaRepository`, `CrudRepository`, … directly or through a project base interface). Owner-scoped queries such as `findByIdAndUser` are not flagged. Also: methods declared on such repositories whose only condition is an id (derived queries like `findByBuyerId`, `@Query` methods taking a single id), MyBatis `@Mapper` methods taking a single id (`selectById(Long id)`, `@Param("orderId")`), and `save`/`saveAndFlush` called with an object bound by `@RequestBody`/`@ModelAttribute` (the body's id can overwrite someone else's data). Methods that also take an owner argument are not flagged. These are candidates: the worker checks whether the code compares the requesting user with the data owner |
 
 - **Dependency vulnerabilities (OWASP A03)**: reads libraries and versions from `pom.xml` (properties, Spring Boot parent), `build.gradle(.kts)` (variables, Spring Boot plugin), `gradle/libs.versions.toml` and `gradle.lockfile`, then asks the public [OSV](https://osv.dev) database for known vulnerabilities (CVE/GHSA, severity, fixed versions). Only library coordinates and versions are sent, never source code; turn it off with `codeagent.dependencies.osv-enabled=false`. Build tools are not run, so transitive dependencies are checked only when a `gradle.lockfile` exists. Run with `POST /api/projects/{id}/dependency-scans` and given to the Planner (`check_dependencies`), which turns serious ones into tasks that check whether the vulnerable feature is actually used.
 - **Dependency scan history**: every scan is saved with the commit it checked, and compared with the previous scan: libraries whose version changed, added and removed libraries, new vulnerabilities (a library was added or changed, or a CVE was published since) and resolved ones. The Planner sees the same comparison.
@@ -168,6 +168,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 10-1 | Dependency vulnerabilities (OWASP A03): build file parsing + OSV lookup, `check_dependencies` Planner tool | ✅ Done |
 | 10-2 | Dependency scan history: compare with the previous scan (version changes, new and resolved vulnerabilities) | ✅ Done |
 | 10-3 | Record the analyzed commit on each analysis job | ✅ Done |
+| 10-4 | More IDOR candidates: id-only repository queries (`@Query`, derived), MyBatis mappers, saving a request body | ✅ Done |
 
 ---
 
@@ -720,7 +721,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
   | XSS | CWE-79 | `HttpServletResponse.getWriter` / `getOutputStream` (응답에 HTML을 직접 씀. `th:utext` 같은 템플릿은 Planner가 따로 점검) |
   | WEAK_CRYPTO | CWE-327 / CWE-328 | `MessageDigest.getInstance`, `Cipher.getInstance`, `SecretKeyFactory.getInstance`, Spring·Commons `DigestUtils.md5*`/`sha1*` (알고리즘과 보안 용도인지는 Worker가 확인) |
   | WEAK_RANDOM | CWE-330 | `new Random()`, `Math.random`, `RandomStringUtils.random*` (토큰·재설정 코드·세션 값에 쓰일 때만 문제) |
-  | IDOR | CWE-639 | Spring Data 저장소(`JpaRepository`, `CrudRepository` 등, 직접 또는 프로젝트 안의 상위 인터페이스를 거쳐 상속)의 `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById`. `findByIdAndUser`처럼 주인 조건이 붙은 쿼리는 잡지 않는다. 후보일 뿐이고, 요청한 사용자와 데이터 소유자를 비교하는지는 Worker가 코드를 읽고 판단한다 |
+  | IDOR | CWE-639 | Spring Data 저장소(`JpaRepository`, `CrudRepository` 등, 직접 또는 프로젝트 안의 상위 인터페이스를 거쳐 상속)의 `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById`. `findByIdAndUser`처럼 주인 조건이 붙은 쿼리는 잡지 않는다. 그 밖에 저장소에 선언한 메서드 중 조건이 식별자 하나뿐인 것(`findByBuyerId` 같은 파생 쿼리, id 하나만 받는 `@Query` 메서드), MyBatis `@Mapper`의 id 하나만 받는 메서드(`selectById(Long id)`, `@Param("orderId")`), `@RequestBody`·`@ModelAttribute`로 받은 객체를 그대로 넘기는 `save`·`saveAndFlush`(본문의 id로 남의 데이터를 덮어쓸 수 있음)도 잡는다. 주인 인자를 같이 받는 메서드는 잡지 않는다. 후보일 뿐이고, 요청한 사용자와 데이터 소유자를 비교하는지는 Worker가 코드를 읽고 판단한다 |
 
 - **의존성 취약점 (OWASP A03)**: `pom.xml`(속성, Spring Boot 부모), `build.gradle(.kts)`(변수, Spring Boot 플러그인), `gradle/libs.versions.toml`, `gradle.lockfile`에서 라이브러리와 버전을 읽고, 공개 취약점 DB [OSV](https://osv.dev)에 알려진 취약점(CVE·GHSA, 심각도, 고친 버전)을 묻는다. 보내는 건 라이브러리 좌표와 버전뿐이고 소스코드는 보내지 않는다. `codeagent.dependencies.osv-enabled=false`로 끌 수 있다. 빌드 도구를 실행하지 않으므로 전이 의존성은 `gradle.lockfile`이 있을 때만 검사된다. `POST /api/projects/{id}/dependency-scans`로 검사하고, Planner(`check_dependencies`)에게도 주어서 심각한 것은 취약한 기능을 실제로 쓰는지 확인하는 할 일이 된다.
 - **의존성 검사 기록**: 검사할 때마다 검사한 커밋과 함께 저장하고 지난 검사와 비교한다. 버전이 바뀐 라이브러리, 추가·제거된 라이브러리, 새 취약점(라이브러리를 넣거나 바꿨거나, 그사이 CVE가 공개됨), 해결된 취약점을 보여준다. Planner도 같은 비교를 본다.
@@ -809,6 +810,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 10-1 | 의존성 취약점(OWASP A03): 빌드 파일 읽기 + OSV 조회, Planner 도구 `check_dependencies` | ✅ 완료 |
 | 10-2 | 의존성 검사 기록: 지난 검사와 비교 (버전 변경, 새 취약점, 해결된 취약점) | ✅ 완료 |
 | 10-3 | 분석 작업마다 분석한 커밋 기록 | ✅ 완료 |
+| 10-4 | IDOR 후보 확대: id 하나로 조회하는 저장소 쿼리(`@Query`, 파생 쿼리), MyBatis 매퍼, 요청 본문 그대로 저장 | ✅ 완료 |
 
 ---
 
