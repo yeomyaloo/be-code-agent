@@ -186,6 +186,13 @@ public class CodeGraphBuilder {
                 return staticType;
             }
         }
+        // new SAXReader().read(...) 처럼 만들자마자 부르는 호출
+        if (scope instanceof ObjectCreationExpr creation) {
+            String createdType = JavaProject.resolveType(creation.getType(), owner.resolver());
+            if (createdType != null) {
+                return createdType;
+            }
+        }
         if (scope instanceof FieldAccessExpr field && field.getScope().isThisExpr()) {
             String fieldType = project.fieldType(owner, field.getNameAsString());
             if (fieldType != null) {

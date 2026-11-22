@@ -8,6 +8,7 @@ import com.codeagent.agent.PlannerPrompts;
 import com.codeagent.agent.WorkerPrompts;
 import com.codeagent.agent.tool.AddIntentionTool;
 import com.codeagent.agent.tool.AgentTool;
+import com.codeagent.agent.tool.CheckDependenciesTool;
 import com.codeagent.agent.tool.FinishPlanningTool;
 import com.codeagent.agent.tool.GetPlanTool;
 import com.codeagent.agent.tool.ListEntryPointsTool;
@@ -20,6 +21,7 @@ import com.codeagent.analysisgraph.domain.AnalysisNode;
 import com.codeagent.analysisgraph.domain.AnalysisNodeKind;
 import com.codeagent.analysisgraph.domain.AnalysisNodeRepository;
 import com.codeagent.analysisgraph.domain.AnalysisNodeStatus;
+import com.codeagent.codegraph.ingest.SinkRules;
 import com.codeagent.codegraph.query.CodeGraphQuery;
 import com.codeagent.codegraph.query.CodeGraphQuery.CodeNodeView;
 import com.codeagent.codegraph.query.CodeGraphQuery.SinkPathView;
@@ -38,6 +40,7 @@ import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -72,7 +75,7 @@ public class AnalysisService {
 
     /** 계획 담당이 쓰는 도구. 코드를 읽을 수는 있지만 사실·발견은 기록하지 않는다 */
     static final Set<String> PLANNER_TOOLS = Set.of(
-            ListSinkPathsTool.NAME, ListEntryPointsTool.NAME, GetPlanTool.NAME, AddIntentionTool.NAME, FinishPlanningTool.NAME,
+            ListSinkPathsTool.NAME, ListEntryPointsTool.NAME, CheckDependenciesTool.NAME, GetPlanTool.NAME, AddIntentionTool.NAME, FinishPlanningTool.NAME,
             "read_file", "grep_code", "find_code_nodes", "get_callers", "get_callees", "search_worker_traces");
 
     private final ProjectRepository projectRepository;
@@ -514,7 +517,10 @@ public class AnalysisService {
         for (SinkPathView path : paths) {
             byPair.putIfAbsent(path.entryPoint().id() + "->" + path.sink().id(), path);
         }
-        return byPair.values().stream().limit(limit).toList();
+        // 위험한 분류부터, 같은 분류면 짧은 경로부터 (sinkPaths 는 경로 길이 순)
+        return byPair.values().stream()
+                .sorted(Comparator.comparingInt(p -> SinkRules.priority(p.sink().category())))
+                .limit(limit).toList();
     }
 
     @PreDestroy

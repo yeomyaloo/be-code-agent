@@ -51,7 +51,7 @@ public class AddIntentionTool implements AgentTool {
         props.put("entry_node_id", Map.of("type", "integer", "description", "조사할 진입점 노드 번호 (선택)"));
         props.put("sink_node_id", Map.of("type", "integer", "description", "조사할 위험 지점 노드 번호 (선택)"));
         props.put("category", Map.of("type", "string", "description",
-                "분류 (예: SQL, COMMAND, PATH, AUTHZ, CONFIG, SECRET). 위험 지점을 주면 생략해도 된다"));
+                "분류 (예: SQL, COMMAND, PATH, XXE, XSS, AUTHZ, AUTHN, CONFIG, SECRET, CRYPTO, DEPENDENCY). 위험 지점을 주면 생략해도 된다"));
         props.put("cwe", Map.of("type", "string", "description", "예상 CWE (예: CWE-639). 위험 지점을 주면 생략해도 된다"));
         props.put("depends_on", Map.of("type", "array", "items", Map.of("type", "integer"),
                 "description", "먼저 끝나야 하는 할 일 번호들"));

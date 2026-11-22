@@ -48,6 +48,13 @@ codeagent:
     planner-rounds: 3
     # true 면 Worker 를 돌리기 전에 사람이 계획(할 일 목록)을 승인해야 한다 (요청의 requireApproval 로 바꿀 수 있음)
     require-approval: false
+  dependencies:
+    # 빌드 파일의 라이브러리 좌표·버전을 공개 취약점 DB(OSV, https://osv.dev)에 물어 알려진 취약점을 찾는다. 소스코드는 보내지 않는다.
+    # 외부로 나가는 요청을 막아야 하면 false (라이브러리 목록만 보여준다)
+    osv-enabled: ${CODEAGENT_OSV_ENABLED:true}
+    osv-url: https://api.osv.dev
+    timeout-seconds: 15
+    max-dependencies: 500
   workspace:
     # Git 주소로 등록한 저장소를 클론하는 곳
     dir: ${CODEAGENT_WORKSPACE:./workspace}

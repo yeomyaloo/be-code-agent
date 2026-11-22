@@ -1,0 +1,16 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.0.0'
+}
+
+ext {
+    jacksonVersion = '2.9.8'
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}"
+    implementation group: 'commons-collections', name: 'commons-collections', version: '3.2.1'
+    implementation libs.log4j.core
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+}

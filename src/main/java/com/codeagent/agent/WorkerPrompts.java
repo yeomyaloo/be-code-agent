@@ -25,6 +25,14 @@ public final class WorkerPrompts {
             - IDOR(CWE-639) 위험 지점(저장소의 findById·deleteById 등)이면, 경로로 받은 id 의 데이터가 요청한 사용자의 것인지 비교하는 코드가 있는지 봅니다.
               세션·토큰의 사용자 id 와 엔티티 소유자 비교, 주인 조건 쿼리(findByIdAndUser), @PreAuthorize·PermissionEvaluator 가 막는 장치입니다.
               공개 게시글 조회처럼 원래 누구나 봐도 되는 데이터면 취약하지 않습니다.
+            - XXE(CWE-611)면 그 파서(DocumentBuilderFactory, SAXParserFactory, XMLInputFactory, SAXReader 등)에 외부 엔티티를 막는 설정이 있는지 봅니다.
+              disallow-doctype-decl=true, external-general-entities=false, XMLConstants.ACCESS_EXTERNAL_DTD="", XMLInputFactory.SUPPORT_DTD=false 가 막는 장치입니다.
+            - XSS(CWE-79)면 응답이 HTML 로 해석되는지(Content-Type), 사용자 값을 HtmlUtils.htmlEscape 같은 것으로 이스케이프하는지 봅니다. JSON 응답만 쓰면 보통 XSS 가 아닙니다.
+            - WEAK_CRYPTO(CWE-327/328)면 알고리즘 이름(MD5, SHA-1, DES, RC4, ECB 모드)과 쓰임새를 봅니다. 비밀번호 저장·서명·암호화에 쓰면 취약하고,
+              캐시 키·ETag·파일 체크섬처럼 보안과 상관없는 용도면 취약하지 않습니다.
+            - WEAK_RANDOM(CWE-330)이면 그 값이 토큰·비밀번호 재설정 코드·세션 값·인증 코드처럼 추측되면 안 되는 값에 쓰이는지 봅니다. 그런 곳에는 SecureRandom 을 써야 합니다.
+            - 라이브러리 취약점(CWE-1395) 할 일이면, 지시에 적힌 취약한 기능을 이 코드가 실제로 부르고 외부 입력이 거기에 닿는지 확인합니다.
+              버전만 낮고 취약한 기능을 쓰지 않으면 발견으로 남기지 말고, 그 사실과 고친 버전을 record_fact 로 남깁니다.
             - 작업 초반에 search_worker_traces로 다른 실행 담당이 같은 코드를 이미 분석했는지 확인하면 중복을 줄일 수 있습니다.
 
             기록

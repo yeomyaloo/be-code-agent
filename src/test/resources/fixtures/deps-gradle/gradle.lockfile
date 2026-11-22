@@ -1,0 +1,4 @@
+# This is a Gradle generated file for dependency locking.
+org.yaml:snakeyaml:1.33=compileClasspath,runtimeClasspath
+org.hamcrest:hamcrest:2.2=testCompileClasspath
+empty=

@@ -21,7 +21,8 @@ Java/Spring 소스코드를 정적 파싱해 코드 그래프를 만들고, Clau
 |---|---|
 | `codegraph` | 소스 파싱 → 코드 그래프 (LLM 사용 안 함). `ingest/` 생성, `query/` 조회 |
 | `analysisgraph` | 분석 그래프 (GOAL/INTENTION/FACT/FINDING), anchor, worker_trace, `AnalysisEvents`(SSE: 그래프·기록이 바뀌면 change, 작업이 끝나면 finished. 쓰기 경로에서 `events.changed()` 를 부른다) |
-| `agent` | `AgentLoop`(Claude 도구 호출 반복), 프롬프트(Planner·Worker·Verifier), `tool/` 도구 (Worker 8, Planner 전용 5, Verifier 판정 1) |
+| `agent` | `AgentLoop`(Claude 도구 호출 반복), 프롬프트(Planner·Worker·Verifier), `tool/` 도구 (Worker 8, Planner 전용 6, Verifier 판정 1) |
+| `dependency` | 빌드 파일(pom.xml, build.gradle, libs.versions.toml, gradle.lockfile)의 라이브러리 → OSV 알려진 취약점. OSV 요청엔 좌표·버전만 보낸다 |
 | `orchestrator` | `AnalysisService`(Planner 회차 ↔ Worker 실행 반복, `PlannerMode` llm/paths), `VerificationService`(발견 재검증) |
 | `llm` | Anthropic 클라이언트, 역할별 모델 설정 |
 | `api` | REST 컨트롤러 |
@@ -31,7 +32,8 @@ Java/Spring 소스코드를 정적 파싱해 코드 그래프를 만들고, Clau
 - 사람 승인: 목표 props `requireApproval`, `approvedRound`, `approvals`. 승인이 필요하면 `AnalysisService.pauseForApproval` 이 작업을 `WAITING_APPROVAL` 로 두고 스레드를 끝낸다. `approve()` 가 `advance()` 로 이어서 진행한다. 상태 전이는 `AnalysisJobRepository.transition`(조건부 update)으로만 한다.
 - 새 도구는 `AgentTool`을 구현한 `@Component`로 추가하고, 쓸 역할의 화이트리스트(`AnalysisService.WORKER_TOOLS`/`PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`)에 이름을 넣는다. 입력 오류는 `ToolInputException`으로 던진다(Claude에게 오류로 전달됨).
 - 파일 접근 도구는 반드시 `RepoPaths.resolve()`로 경로를 검사한다(저장소 밖 접근 차단).
-- 위험 지점 규칙은 `codegraph/ingest/SinkRules.java`, 진입점 탐지는 `EntryPointDetector.java`.
+- 위험 지점 규칙은 `codegraph/ingest/SinkRules.java`(새 분류는 `CATEGORY_ORDER` 에도), 진입점 탐지는 `EntryPointDetector.java`.
+- 테스트는 실제 OSV 에 요청하지 않는다. `OsvClientTest` 처럼 로컬 HttpServer 로 흉내 낸다.
 
 ## 코드 규칙
 

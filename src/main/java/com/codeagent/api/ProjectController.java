@@ -2,6 +2,8 @@ package com.codeagent.api;
 
 import com.codeagent.codegraph.ingest.CodeGraphIndexer;
 import com.codeagent.codegraph.ingest.CodeGraphIndexer.IndexResult;
+import com.codeagent.dependency.DependencyService;
+import com.codeagent.dependency.DependencyService.DependencyReport;
 import com.codeagent.project.Project;
 import com.codeagent.project.ProjectRepository;
 import com.codeagent.project.ProjectService;
@@ -26,6 +28,7 @@ public class ProjectController {
     private final ProjectRepository projectRepository;
     private final ProjectService projectService;
     private final CodeGraphIndexer codeGraphIndexer;
+    private final DependencyService dependencyService;
 
     /**
      * gitUrl 과 repoPath 중 하나만 준다.
@@ -46,6 +49,15 @@ public class ProjectController {
                     project.getLanguage(), project.getGitUrl(), project.getGitBranch(), project.getCommitSha(),
                     project.getSyncedAt(), project.getCreatedAt());
         }
+    }
+
+    /**
+     * 빌드 파일의 라이브러리와 알려진 취약점(OSV). 라이브러리 좌표와 버전만 OSV 로 보내고 소스코드는 보내지 않는다.
+     * OSV 에 묻지 못하면 checked=false 와 error 로 알린다.
+     */
+    @GetMapping("/{id}/dependencies")
+    public DependencyReport dependencies(@PathVariable Long id) {
+        return dependencyService.check(id);
     }
 
     @PostMapping

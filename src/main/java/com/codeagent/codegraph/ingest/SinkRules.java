@@ -75,8 +75,51 @@ public final class SinkRules {
 
             // 오픈 리다이렉트
             rule("jakarta.servlet.http.HttpServletResponse", "OPEN_REDIRECT", "CWE-601", "sendRedirect"),
-            rule("javax.servlet.http.HttpServletResponse", "OPEN_REDIRECT", "CWE-601", "sendRedirect")
+            rule("javax.servlet.http.HttpServletResponse", "OPEN_REDIRECT", "CWE-601", "sendRedirect"),
+
+            // XXE: 외부 엔티티를 막지 않은 XML 파서가 사용자 XML 을 읽으면 서버 파일을 읽거나 내부망에 요청할 수 있다
+            rule("javax.xml.parsers.DocumentBuilder", "XXE", "CWE-611", "parse"),
+            rule("javax.xml.parsers.SAXParser", "XXE", "CWE-611", "parse"),
+            rule("org.xml.sax.XMLReader", "XXE", "CWE-611", "parse"),
+            rule("javax.xml.stream.XMLInputFactory", "XXE", "CWE-611", "createXMLStreamReader", "createXMLEventReader"),
+            rule("javax.xml.transform.Transformer", "XXE", "CWE-611", "transform"),
+            rule("javax.xml.validation.Validator", "XXE", "CWE-611", "validate"),
+            rule("jakarta.xml.bind.Unmarshaller", "XXE", "CWE-611", "unmarshal"),
+            rule("javax.xml.bind.Unmarshaller", "XXE", "CWE-611", "unmarshal"),
+            rule("org.dom4j.io.SAXReader", "XXE", "CWE-611", "read"),
+            rule("org.jdom2.input.SAXBuilder", "XXE", "CWE-611", "build"),
+
+            // XSS: 응답에 직접 쓰는 HTML. 템플릿(th:utext 등)은 계획 담당이 따로 점검한다
+            rule("jakarta.servlet.http.HttpServletResponse", "XSS", "CWE-79", "getWriter", "getOutputStream"),
+            rule("javax.servlet.http.HttpServletResponse", "XSS", "CWE-79", "getWriter", "getOutputStream"),
+
+            // 약한 암호화: 알고리즘 이름(MD5, SHA-1, DES, ECB 등)을 보고 판단한다
+            rule("java.security.MessageDigest", "WEAK_CRYPTO", "CWE-328", "getInstance"),
+            rule("javax.crypto.Cipher", "WEAK_CRYPTO", "CWE-327", "getInstance"),
+            rule("javax.crypto.SecretKeyFactory", "WEAK_CRYPTO", "CWE-327", "getInstance"),
+            rule("org.springframework.util.DigestUtils", "WEAK_CRYPTO", "CWE-328", "md5Digest", "md5DigestAsHex"),
+            rule("org.apache.commons.codec.digest.DigestUtils", "WEAK_CRYPTO", "CWE-328", "md5", "md5Hex", "sha1", "sha1Hex"),
+
+            // 예측 가능한 난수: 토큰·비밀번호 재설정 코드·세션 값에 쓰이면 위험하다 (SecureRandom 은 해당 없음)
+            rule("java.util.Random", "WEAK_RANDOM", "CWE-330", "<init>"),
+            rule("java.lang.Math", "WEAK_RANDOM", "CWE-330", "random"),
+            rule("org.apache.commons.lang3.RandomStringUtils", "WEAK_RANDOM", "CWE-330",
+                    "random", "randomAlphabetic", "randomAlphanumeric", "randomNumeric")
     );
+
+    /**
+     * 분류별 조사 우선순위 (작을수록 먼저). 경로 계획이 할 일 상한 안에서 위험한 경로부터 고르는 데 쓴다.
+     * 원격 코드 실행·데이터 유출로 바로 이어지는 분류가 앞이고, 약한 암호화·난수처럼 쓰임새를 봐야 하는 분류가 뒤다.
+     */
+    private static final List<String> CATEGORY_ORDER = List.of(
+            "COMMAND", "CODE_INJECTION", "EXPRESSION_INJECTION", "DESERIALIZATION", "JNDI", "SQL",
+            "XXE", "IDOR", "PATH", "SSRF", "XSS", "OPEN_REDIRECT", "WEAK_CRYPTO", "WEAK_RANDOM");
+
+    /** 분류의 조사 우선순위. 모르는 분류는 맨 뒤 */
+    public static int priority(String category) {
+        int i = CATEGORY_ORDER.indexOf(category);
+        return i < 0 ? CATEGORY_ORDER.size() : i;
+    }
 
     /** 이 타입을 상속하는 프로젝트 인터페이스를 Spring Data 저장소로 본다 */
     public static final Set<String> REPOSITORY_TYPES = Set.of(

@@ -62,7 +62,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 - **Source-only analysis, no library jars**: types are inferred from import statements and variable/field declarations, falling back to the JavaParser symbol solver. Repositories can be analyzed without building them.
 - **Structure extraction**: builds the file → class → method hierarchy and inheritance links (interface method → implementing method).
 - **HTTP entry point detection**: reads `@GetMapping`, `@PostMapping`, `@RequestMapping` etc. in `@RestController`/`@Controller` classes and normalizes them to the form `GET /api/users/search`. Class-level paths, multiple paths and `method = {GET, HEAD}` are handled.
-- **Sink detection**: about 30 rules in 9 categories find calls to dangerous APIs, plus **IDOR candidates**: id-based access through Spring Data repositories (see the table).
+- **Sink detection**: 54 rules in 13 categories find calls to dangerous APIs, plus **IDOR candidates**: id-based access through Spring Data repositories (see the table).
 
   | Category | CWE | Typical APIs |
   |---|---|---|
@@ -75,8 +75,13 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
   | EXPRESSION_INJECTION | CWE-917 | `SpelExpressionParser.parseExpression` |
   | JNDI | CWE-74 | `InitialContext.lookup` |
   | OPEN_REDIRECT | CWE-601 | `HttpServletResponse.sendRedirect` |
+  | XXE | CWE-611 | `DocumentBuilder.parse`, `SAXParser.parse`, `XMLInputFactory.createXMLStreamReader`, `Unmarshaller.unmarshal`, dom4j `SAXReader.read`, JDOM `SAXBuilder.build` (the worker checks whether the parser factory disables external entities) |
+  | XSS | CWE-79 | `HttpServletResponse.getWriter` / `getOutputStream` (HTML written directly to the response; templates such as `th:utext` are checked by the Planner) |
+  | WEAK_CRYPTO | CWE-327 / CWE-328 | `MessageDigest.getInstance`, `Cipher.getInstance`, `SecretKeyFactory.getInstance`, Spring/Commons `DigestUtils.md5*`/`sha1*` (the worker checks the algorithm and whether it is used for security) |
+  | WEAK_RANDOM | CWE-330 | `new Random()`, `Math.random`, `RandomStringUtils.random*` (only a problem for tokens, reset codes, session values) |
   | IDOR | CWE-639 | `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById` on project interfaces that extend a Spring Data repository (`JpaRepository`, `CrudRepository`, … directly or through a project base interface). Owner-scoped queries such as `findByIdAndUser` are not flagged. These are candidates: the worker checks whether the code compares the requesting user with the data owner |
 
+- **Dependency vulnerabilities (OWASP A03)**: reads libraries and versions from `pom.xml` (properties, Spring Boot parent), `build.gradle(.kts)` (variables, Spring Boot plugin), `gradle/libs.versions.toml` and `gradle.lockfile`, then asks the public [OSV](https://osv.dev) database for known vulnerabilities (CVE/GHSA, severity, fixed versions). Only library coordinates and versions are sent, never source code; turn it off with `codeagent.dependencies.osv-enabled=false`. Build tools are not run, so transitive dependencies are checked only when a `gradle.lockfile` exists. Shown at `GET /api/projects/{id}/dependencies` and given to the Planner (`check_dependencies`), which turns serious ones into tasks that check whether the vulnerable feature is actually used.
 - **Entry point → sink path search**: a PostgreSQL recursive CTE extracts "which API reaches which sink through which methods". Calls through interfaces are followed too.
 
 ### Agent analysis (implemented)
@@ -88,17 +93,20 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
       - missing owner checks on APIs that handle data via a path variable (`{id}`) (CWE-639)
       - missing role checks on admin functions (CWE-862)
       - security configuration, hardcoded secrets
+      - authentication: JWT signature/expiry checks (CWE-347), password storage (plaintext or MD5/SHA-1, CWE-256/916), template XSS (`th:utext`)
+      - libraries with known vulnerabilities (`check_dependencies`): whether the vulnerable feature is actually used (CWE-1395)
     - **Round 2 onward**: after the Workers finish all tasks, it reads their conclusions and findings and adds tasks if follow-up investigation is needed. Otherwise it ends with `finish_planning`.
     - **Ordered tasks**: linked with `depends_on` (a DEPENDS_ON edge), a task starts only after its prerequisite is done. If the prerequisite fails, the dependent task is marked failed too.
     - **Stop conditions**: it never exceeds the task limit (`maxIntentions`) or the maximum number of rounds (`planner-rounds`, default 3).
-  - `paths`: mechanically creates one task per entry point → sink path, using the shortest path for each (entry point, sink) pair.
+  - `paths`: mechanically creates one task per entry point → sink path, using the shortest path for each (entry point, sink) pair. Riskier categories come first (command/code injection, deserialization, SQL → XXE, IDOR, path, SSRF, XSS → weak crypto and randomness).
 - **Planner tools**
-  - 5 Planner-only tools
+  - 6 Planner-only tools
 
     | Tool | What it does |
     |---|---|
     | `list_sink_paths` | Entry point → sink paths (shortest per pair), marking paths that already have a task |
     | `list_entry_points` | All HTTP entry points (including those that reach no sink; candidates for authorization checks) |
+    | `check_dependencies` | Libraries in the build files with known vulnerabilities (OSV): CVE, severity, fixed version |
     | `get_plan` | Shared task list: status, round created, prerequisites, Worker conclusion summary, findings |
     | `add_intention` | Add a task (instruction, optional entry point and sink, category and CWE, prerequisites). Blocks duplicates of the same path and going over the limit |
     | `finish_planning` | End planning (no next round) |
@@ -154,6 +162,8 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 8-1 | Real-time progress (SSE, falls back to 2-second polling) | ✅ Done |
 | 8-2 | Human approval step: approve each plan (and drop tasks) before Workers run, or reject it | ✅ Done |
 | 9 | One-click Docker Compose setup (PostgreSQL + backend + web UI), checked on GitHub Actions | ✅ Done |
+| 10 | Wider OWASP coverage: XXE, XSS, weak crypto and randomness sinks; Planner checks for authentication, JWT and password storage | ✅ Done |
+| 10-1 | Dependency vulnerabilities (OWASP A03): build file parsing + OSV lookup, `check_dependencies` Planner tool | ✅ Done |
 
 ---
 
@@ -244,6 +254,7 @@ The configuration file is `src/main/resources/application.yml`. It can be overri
 | `ANTHROPIC_API_KEY` | (none) | Anthropic API key (`codeagent.llm.api-key`) |
 | `CODEAGENT_WORKSPACE` | `./workspace` | Folder where Git repositories are cloned |
 | `CODEAGENT_ALLOW_LOCAL_PATH` | `true` | Whether registering a folder path on the server's disk is allowed |
+| `CODEAGENT_OSV_ENABLED` | `true` | Whether to ask OSV about known library vulnerabilities (`codeagent.dependencies.osv-enabled`) |
 
 - JPA runs with `ddl-auto: validate`, so schema changes must go in a Flyway migration file (the next number, like `V5__...sql`). Migration files that have already been applied are never edited.
 - Virtual threads (`spring.threads.virtual.enabled`) are enabled.
@@ -344,6 +355,7 @@ The response contains the number of files, classes, methods, entry points and si
 | API | Description |
 |---|---|
 | `GET /api/projects` | Registered repositories |
+| `GET /api/projects/{id}/dependencies` | Libraries from the build files and their known vulnerabilities (OSV). `checked=false` and `error` when OSV could not be asked |
 | `GET /api/projects/{id}/code-graph/entry-points` | HTTP entry points |
 | `GET /api/projects/{id}/code-graph/sinks` | Sinks (category, CWE, code snippet, location) |
 | `GET /api/projects/{id}/code-graph/sink-paths?maxDepth=12` | Entry point → sink call paths (max depth 30, at most 500) |
@@ -394,7 +406,7 @@ The code graph must be built first. `paths` returns 400 if there is not a single
 - `AnalysisFlowTest` uses a fake `AgentLoop` that calls the tools directly instead of real Claude, and checks the flow task creation → distribution → recording facts and findings → verification verdicts (confirmed, false positive, no verdict submitted) → job end, plus the Worker and Verifier tool sets and re-running verification. It needs no API key but needs PostgreSQL.
 - `PlannerFlowTest` checks the LLM planning flow the same way: planning round 1 (path tasks + authorization checks without paths, DEPENDS_ON, rejecting duplicates and invalid nodes) → Worker execution order → round 2 (reading conclusions with get_plan, follow-ups, rejecting going over the limit, finish_planning) → round 3 skipped, and cascading failure when a prerequisite fails.
 - **Adding a tool**: create a `@Component` implementing `agent/tool/AgentTool`, and add its name to the tool list of each role that uses it (`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`). For invalid input, throw `ToolInputException`; it is passed to Claude as an error so it can retry.
-- **Adding a sink rule**: add `rule(type FQN, category, CWE, methods...)` to `RULES` in `codegraph/ingest/SinkRules.java`. Write constructors as the method name `<init>`.
+- **Adding a sink rule**: add `rule(type FQN, category, CWE, methods...)` to `RULES` in `codegraph/ingest/SinkRules.java`. Write constructors as the method name `<init>`. Put a new category in `CATEGORY_ORDER` (investigation priority) too.
 - **Adding an entry point kind**: extend `codegraph/ingest/EntryPointDetector.java`.
 
 ---
@@ -564,11 +576,12 @@ be-code-agent/
 │   │   ├── PlannerPrompts.java                      Planner system prompt, round prompt
 │   │   ├── WorkerPrompts.java                       Worker system prompt, task prompt (path / planner instruction)
 │   │   ├── VerifierPrompts.java                     Verifier system prompt, finding prompt
-│   │   └── tool/                                    8 Worker tools, 5 Planner tools (+PlanSupport), Verifier verdict tool, input checks (ToolInput)
+│   │   └── tool/                                    8 Worker tools, 6 Planner tools (+PlanSupport), Verifier verdict tool, input checks (ToolInput)
 │   ├── orchestrator/
 │   │   ├── AnalysisService.java                     creates analysis jobs, alternates Planner rounds ↔ Worker runs, starts verification
 │   │   ├── PlannerMode.java                         task creation mode (llm / paths)
 │   │   └── VerificationService.java                 runs the Verifier for each pending finding
+│   ├── dependency/                                  DependencyScanner (build files), OsvClient (known vulnerabilities), DependencyService
 │   ├── report/                                      reports: ReportService (collects findings), SarifWriter, HtmlReportWriter
 │   ├── api/                                         REST controllers (projects, code graph, analyses, reports)
 │   └── common/GlobalExceptionHandler.java           maps to 404 / 400 responses
@@ -684,7 +697,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 - **라이브러리 jar 없이 소스만으로 분석**: import 문과 변수·필드 선언으로 타입을 알아내고, 안 되면 JavaParser symbol solver에 맡긴다. 빌드하지 않은 저장소도 바로 분석할 수 있다.
 - **구조 추출**: 파일 → 클래스 → 메서드 계층과 상속 관계(인터페이스 메서드 → 구현 메서드)를 만든다.
 - **HTTP 진입점 탐지**: `@RestController`/`@Controller`의 `@GetMapping`·`@PostMapping`·`@RequestMapping` 등을 읽어 `GET /api/users/search` 형태로 정리한다. 클래스 레벨 경로, 여러 경로, `method = {GET, HEAD}`도 처리한다.
-- **위험 지점(Sink) 탐지**: 9개 분류 30여 개 규칙으로 위험한 API 호출 위치를 찾는다. 여기에 더해 Spring Data 저장소의 id 접근을 **IDOR 후보**로 잡는다 (표 참고).
+- **위험 지점(Sink) 탐지**: 13개 분류 54개 규칙으로 위험한 API 호출 위치를 찾는다. 여기에 더해 Spring Data 저장소의 id 접근을 **IDOR 후보**로 잡는다 (표 참고).
 
   | 분류 | CWE | 대표 API |
   |---|---|---|
@@ -697,8 +710,13 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
   | EXPRESSION_INJECTION | CWE-917 | `SpelExpressionParser.parseExpression` |
   | JNDI | CWE-74 | `InitialContext.lookup` |
   | OPEN_REDIRECT | CWE-601 | `HttpServletResponse.sendRedirect` |
+  | XXE | CWE-611 | `DocumentBuilder.parse`, `SAXParser.parse`, `XMLInputFactory.createXMLStreamReader`, `Unmarshaller.unmarshal`, dom4j `SAXReader.read`, JDOM `SAXBuilder.build` (파서 팩토리가 외부 엔티티를 막는지는 Worker가 확인) |
+  | XSS | CWE-79 | `HttpServletResponse.getWriter` / `getOutputStream` (응답에 HTML을 직접 씀. `th:utext` 같은 템플릿은 Planner가 따로 점검) |
+  | WEAK_CRYPTO | CWE-327 / CWE-328 | `MessageDigest.getInstance`, `Cipher.getInstance`, `SecretKeyFactory.getInstance`, Spring·Commons `DigestUtils.md5*`/`sha1*` (알고리즘과 보안 용도인지는 Worker가 확인) |
+  | WEAK_RANDOM | CWE-330 | `new Random()`, `Math.random`, `RandomStringUtils.random*` (토큰·재설정 코드·세션 값에 쓰일 때만 문제) |
   | IDOR | CWE-639 | Spring Data 저장소(`JpaRepository`, `CrudRepository` 등, 직접 또는 프로젝트 안의 상위 인터페이스를 거쳐 상속)의 `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById`. `findByIdAndUser`처럼 주인 조건이 붙은 쿼리는 잡지 않는다. 후보일 뿐이고, 요청한 사용자와 데이터 소유자를 비교하는지는 Worker가 코드를 읽고 판단한다 |
 
+- **의존성 취약점 (OWASP A03)**: `pom.xml`(속성, Spring Boot 부모), `build.gradle(.kts)`(변수, Spring Boot 플러그인), `gradle/libs.versions.toml`, `gradle.lockfile`에서 라이브러리와 버전을 읽고, 공개 취약점 DB [OSV](https://osv.dev)에 알려진 취약점(CVE·GHSA, 심각도, 고친 버전)을 묻는다. 보내는 건 라이브러리 좌표와 버전뿐이고 소스코드는 보내지 않는다. `codeagent.dependencies.osv-enabled=false`로 끌 수 있다. 빌드 도구를 실행하지 않으므로 전이 의존성은 `gradle.lockfile`이 있을 때만 검사된다. `GET /api/projects/{id}/dependencies`로 보고, Planner(`check_dependencies`)에게도 주어서 심각한 것은 취약한 기능을 실제로 쓰는지 확인하는 할 일이 된다.
 - **진입점 → 위험 지점 경로 탐색**: PostgreSQL 재귀 CTE로 "어느 API에서 어느 위험 지점까지 어떤 메서드들을 거쳐 도달하는지"를 뽑는다. 인터페이스를 거치는 호출도 따라간다.
 
 ### 에이전트 분석 (구현됨)
@@ -710,17 +728,20 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
       - 경로 변수(`{id}`)로 데이터를 다루는 API의 소유자 확인 누락(CWE-639)
       - 관리 기능의 역할 검사 누락(CWE-862)
       - 보안 설정, 하드코딩된 비밀값
+      - 인증: JWT 서명·만료 검증(CWE-347), 비밀번호 저장(평문이나 MD5·SHA-1, CWE-256/916), 템플릿 XSS(`th:utext`)
+      - 알려진 취약점이 있는 라이브러리(`check_dependencies`): 취약한 기능을 실제로 쓰는지(CWE-1395)
     - **2회차부터**: Worker들이 할 일을 다 끝낸 뒤 결론과 발견을 보고, 후속 조사가 필요하면 할 일을 더한다. 필요 없으면 `finish_planning`으로 끝낸다.
     - **순서가 필요한 일**: `depends_on`(DEPENDS_ON 연결선)으로 걸면 선행 할 일이 끝난 뒤 시작된다. 선행 할 일이 실패하면 뒤의 할 일도 실패로 표시한다.
     - **멈추는 조건**: 할 일 수 상한(`maxIntentions`)과 최대 회차(`planner-rounds`, 기본 3)를 넘지 않는다.
-  - `paths`: 진입점 → 위험 지점 경로마다, (진입점, 위험 지점) 쌍 하나당 가장 짧은 경로로 할 일을 기계적으로 만든다.
+  - `paths`: 진입점 → 위험 지점 경로마다, (진입점, 위험 지점) 쌍 하나당 가장 짧은 경로로 할 일을 기계적으로 만든다. 위험한 분류부터 고른다(명령·코드 인젝션, 역직렬화, SQL → XXE, IDOR, 경로, SSRF, XSS → 약한 암호화·난수).
 - **Planner 도구**
-  - 전용 5개
+  - 전용 6개
 
     | 도구 | 하는 일 |
     |---|---|
     | `list_sink_paths` | 진입점 → 위험 지점 경로 (쌍마다 가장 짧은 것), 이미 할 일이 있는 경로 표시 |
     | `list_entry_points` | HTTP 진입점 전체 (위험 지점에 닿지 않는 것 포함, 권한 점검 후보) |
+    | `check_dependencies` | 빌드 파일의 라이브러리 중 알려진 취약점(OSV)이 있는 것: CVE, 심각도, 고친 버전 |
     | `get_plan` | 공유 할 일 목록: 상태, 만든 회차, 선행 할 일, Worker 결론 요약, 발견 |
     | `add_intention` | 할 일 추가 (지시, 선택적으로 진입점·위험 지점, 분류·CWE, 선행 할 일). 같은 경로 중복과 상한 초과는 막는다 |
     | `finish_planning` | 계획을 끝냄 (다음 회차를 열지 않음) |
@@ -776,6 +797,8 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 8-1 | 실시간 진행 상황 (SSE, 끊기면 2초 폴링) | ✅ 완료 |
 | 8-2 | 사람 승인 단계: 계획이 나올 때마다 Worker 실행 전에 승인(할 일 빼기 가능) 또는 거절 | ✅ 완료 |
 | 9 | Docker Compose 원클릭 실행 (PostgreSQL + 백엔드 + 웹 화면), GitHub Actions로 확인 | ✅ 완료 |
+| 10 | OWASP 범위 확대: XXE·XSS·약한 암호화·난수 위험 지점, Planner의 인증·JWT·비밀번호 저장 점검 | ✅ 완료 |
+| 10-1 | 의존성 취약점(OWASP A03): 빌드 파일 읽기 + OSV 조회, Planner 도구 `check_dependencies` | ✅ 완료 |
 
 ---
 
@@ -866,6 +889,7 @@ Windows PowerShell에서는 `.\gradlew.bat bootRun`.
 | `ANTHROPIC_API_KEY` | (없음) | Anthropic API 키 (`codeagent.llm.api-key`) |
 | `CODEAGENT_WORKSPACE` | `./workspace` | Git 저장소를 클론하는 폴더 |
 | `CODEAGENT_ALLOW_LOCAL_PATH` | `true` | 서버 디스크 폴더 경로로 등록 허용 여부 |
+| `CODEAGENT_OSV_ENABLED` | `true` | 라이브러리의 알려진 취약점을 OSV에 물을지 (`codeagent.dependencies.osv-enabled`) |
 
 - JPA는 `ddl-auto: validate`라서 스키마 변경은 반드시 Flyway 마이그레이션 파일(`V5__...sql`처럼 다음 번호)로 한다. 이미 적용된 마이그레이션 파일은 고치지 않는다.
 - 가상 스레드(`spring.threads.virtual.enabled`)가 켜져 있다.
@@ -966,6 +990,7 @@ curl -X POST localhost:8080/api/projects/1/index
 | API | 설명 |
 |---|---|
 | `GET /api/projects` | 등록된 저장소 목록 |
+| `GET /api/projects/{id}/dependencies` | 빌드 파일의 라이브러리와 알려진 취약점(OSV). OSV에 묻지 못하면 `checked=false`와 `error` |
 | `GET /api/projects/{id}/code-graph/entry-points` | HTTP 진입점 |
 | `GET /api/projects/{id}/code-graph/sinks` | 위험 지점 (분류, CWE, 코드 조각, 위치) |
 | `GET /api/projects/{id}/code-graph/sink-paths?maxDepth=12` | 진입점 → 위험 지점 호출 경로 (최대 깊이 30, 최대 500개) |
@@ -1016,7 +1041,7 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 - `AnalysisFlowTest`는 실제 Claude 대신 가짜 `AgentLoop`가 도구를 직접 호출해서 할 일 생성 → 배분 → 사실·발견 기록 → 검증 판정(확정·오탐·판정 미제출) → 작업 종료 흐름과, Worker·Verifier 도구 구성, 검증 재실행을 검증한다. API 키는 필요 없지만 PostgreSQL이 필요하다.
 - `PlannerFlowTest`는 같은 방식으로 LLM 계획 흐름을 검증한다: 계획 1회차(경로 할 일 + 경로 없는 권한 점검, DEPENDS_ON, 중복·잘못된 노드 거절) → Worker 실행 순서 → 2회차(get_plan 으로 결론 확인, 보완, 상한 초과 거절, finish_planning) → 3회차 생략, 선행 할 일 실패 시 연쇄 실패 처리.
 - **도구 추가**: `agent/tool/AgentTool`을 구현한 `@Component`를 만들고, 쓸 역할의 도구 목록(`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`)에 이름을 넣는다. 잘못된 입력은 `ToolInputException`을 던지면 Claude에게 오류로 전달되어 다시 시도하게 된다.
-- **위험 지점 규칙 추가**: `codegraph/ingest/SinkRules.java`의 `RULES`에 `rule(타입 FQN, 분류, CWE, 메서드...)`를 추가한다. 생성자는 메서드 이름 `<init>`으로 적는다.
+- **위험 지점 규칙 추가**: `codegraph/ingest/SinkRules.java`의 `RULES`에 `rule(타입 FQN, 분류, CWE, 메서드...)`를 추가한다. 생성자는 메서드 이름 `<init>`으로 적는다. 새 분류면 `CATEGORY_ORDER`(조사 우선순위)에도 넣는다.
 - **진입점 종류 추가**: `codegraph/ingest/EntryPointDetector.java`를 확장한다.
 
 ---
@@ -1186,11 +1211,12 @@ be-code-agent/
 │   │   ├── PlannerPrompts.java                      Planner 시스템 프롬프트, 회차 프롬프트
 │   │   ├── WorkerPrompts.java                       Worker 시스템 프롬프트, 할 일 프롬프트 (경로 / 계획 지시)
 │   │   ├── VerifierPrompts.java                     Verifier 시스템 프롬프트, 발견 프롬프트
-│   │   └── tool/                                    Worker 도구 8개, Planner 도구 5개(+PlanSupport), Verifier 판정 도구, 입력 검증(ToolInput)
+│   │   └── tool/                                    Worker 도구 8개, Planner 도구 6개(+PlanSupport), Verifier 판정 도구, 입력 검증(ToolInput)
 │   ├── orchestrator/
 │   │   ├── AnalysisService.java                     분석 작업 생성, Planner 회차 ↔ Worker 실행 반복, 검증 단계 시작
 │   │   ├── PlannerMode.java                         할 일 생성 방식 (llm / paths)
 │   │   └── VerificationService.java                 검증 대기 발견마다 Verifier 실행
+│   ├── dependency/                                  DependencyScanner(빌드 파일 읽기), OsvClient(알려진 취약점), DependencyService
 │   ├── report/                                      보고서: ReportService(발견 모으기), SarifWriter, HtmlReportWriter
 │   ├── api/                                         REST 컨트롤러 (프로젝트, 코드 그래프, 분석, 보고서)
 │   └── common/GlobalExceptionHandler.java           404 / 400 응답 변환

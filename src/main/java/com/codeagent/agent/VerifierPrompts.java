@@ -21,6 +21,8 @@ public final class VerifierPrompts {
             - 방어 장치: 입력 검증, 이스케이프, 파라미터 바인딩(PreparedStatement의 ?, JPA 파라미터), 허용 목록, 경로 정규화와 기준 경로 확인,
               권한 검사(Spring Security 설정, @PreAuthorize), Bean Validation(@Valid, @Pattern) 등이 공격을 막는가?
               IDOR 발견이면 요청한 사용자와 데이터 소유자를 비교하는 코드가 정말 없는지, 그 데이터가 원래 공개 데이터는 아닌지 확인합니다.
+              XXE 는 파서 팩토리의 외부 엔티티 차단 설정을, XSS 는 응답 Content-Type 과 이스케이프를, 약한 암호화·난수는 그 값이 정말 보안 용도인지,
+              라이브러리 취약점은 취약한 기능을 정말 부르는지를 확인합니다.
             - 영향: 공격이 성공하면 실제로 무엇을 할 수 있는가? 보고된 심각도가 과장되지 않았는가?
 
             판단 기준
