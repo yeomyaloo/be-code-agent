@@ -1,0 +1,198 @@
+{
+  "name": "shop-app",
+  "description": "취약점 11개와 비슷하게 생겼지만 안전한 코드 10개를 섞은 작은 쇼핑몰. 같은 분류의 진짜와 함정이 짝을 이룬다.",
+  "vulnerabilities": [
+    {
+      "id": "sql-search",
+      "category": "SQL",
+      "cwe": ["CWE-89"],
+      "file": "src/main/java/com/example/shop/product/ProductQueryService.java",
+      "lines": [21, 24],
+      "sinkLine": 23,
+      "entryPoint": "GET /api/products/search",
+      "why": "검색어 q 를 SQL 문자열에 그대로 이어 붙인다"
+    },
+    {
+      "id": "command-ping",
+      "category": "COMMAND",
+      "cwe": ["CWE-78", "CWE-77"],
+      "file": "src/main/java/com/example/shop/admin/DiagnosticsController.java",
+      "lines": [15, 19],
+      "sinkLine": 17,
+      "entryPoint": "POST /api/admin/ping",
+      "why": "host 를 명령 문자열에 이어 붙여 Runtime.exec 에 넘긴다 (인자 주입)"
+    },
+    {
+      "id": "path-invoice",
+      "category": "PATH",
+      "cwe": ["CWE-22", "CWE-23", "CWE-73"],
+      "file": "src/main/java/com/example/shop/file/FileController.java",
+      "lines": [19, 22],
+      "sinkLine": 21,
+      "entryPoint": "GET /api/files/invoices/{name}",
+      "why": "name 을 resolve 한 뒤 기준 폴더 안인지 확인하지 않는다"
+    },
+    {
+      "id": "ssrf-webhook",
+      "category": "SSRF",
+      "cwe": ["CWE-918"],
+      "file": "src/main/java/com/example/shop/webhook/WebhookController.java",
+      "lines": [25, 28],
+      "sinkLine": 27,
+      "entryPoint": "POST /api/webhooks/test",
+      "why": "요청 본문의 url 로 서버가 그대로 요청을 보낸다"
+    },
+    {
+      "id": "idor-order",
+      "category": "IDOR",
+      "cwe": ["CWE-639", "CWE-284", "CWE-285", "CWE-862", "CWE-863"],
+      "file": "src/main/java/com/example/shop/order/OrderController.java",
+      "lines": [21, 24],
+      "sinkLine": 23,
+      "entryPoint": "GET /api/orders/{id}",
+      "why": "고객 id 를 받고도 주문의 주인인지 확인하지 않고 돌려준다"
+    },
+    {
+      "id": "deserialization-cart",
+      "category": "DESERIALIZATION",
+      "cwe": ["CWE-502"],
+      "file": "src/main/java/com/example/shop/importer/ImportController.java",
+      "lines": [20, 27],
+      "sinkLine": 24,
+      "entryPoint": "POST /api/import/cart",
+      "why": "요청 본문을 ObjectInputStream 으로 역직렬화한다"
+    },
+    {
+      "id": "xxe-feed",
+      "category": "XXE",
+      "cwe": ["CWE-611", "CWE-776"],
+      "file": "src/main/java/com/example/shop/importer/ImportController.java",
+      "lines": [29, 34],
+      "sinkLine": 32,
+      "entryPoint": "POST /api/import/feed",
+      "why": "기본 설정 DocumentBuilderFactory 로 사용자 XML 을 읽는다"
+    },
+    {
+      "id": "redirect-done",
+      "category": "OPEN_REDIRECT",
+      "cwe": ["CWE-601"],
+      "file": "src/main/java/com/example/shop/auth/LoginController.java",
+      "lines": [22, 25],
+      "sinkLine": 24,
+      "entryPoint": "GET /api/auth/done",
+      "why": "next 파라미터로 확인 없이 이동시킨다"
+    },
+    {
+      "id": "weak-random-reset",
+      "category": "WEAK_RANDOM",
+      "cwe": ["CWE-330", "CWE-338", "CWE-340"],
+      "file": "src/main/java/com/example/shop/auth/ResetTokenService.java",
+      "lines": [17, 22],
+      "sinkLine": 18,
+      "entryPoint": "POST /api/auth/password-reset",
+      "why": "비밀번호 재설정 토큰을 java.util.Random 으로 만든다 (예측 가능)"
+    },
+    {
+      "id": "xss-review",
+      "category": "XSS",
+      "cwe": ["CWE-79", "CWE-80"],
+      "file": "frontend/src/ProductReview.tsx",
+      "lines": [5, 7],
+      "sinkLine": 6,
+      "entryPoint": null,
+      "why": "리뷰 본문을 거르지 않고 dangerouslySetInnerHTML 로 넣는다"
+    },
+    {
+      "id": "redirect-return-to",
+      "category": "OPEN_REDIRECT",
+      "cwe": ["CWE-601"],
+      "file": "frontend/src/ProductReview.tsx",
+      "lines": [13, 16],
+      "sinkLine": 15,
+      "entryPoint": null,
+      "why": "주소창의 returnTo 값으로 확인 없이 이동한다"
+    }
+  ],
+  "safe": [
+    {
+      "id": "sql-get-by-id",
+      "category": "SQL",
+      "file": "src/main/java/com/example/shop/product/ProductQueryService.java",
+      "lines": [26, 28],
+      "sinkLine": 27,
+      "why": "바인드 변수(?)를 쓴다"
+    },
+    {
+      "id": "sql-sort-allowlist",
+      "category": "SQL",
+      "file": "src/main/java/com/example/shop/product/ProductQueryService.java",
+      "lines": [30, 35],
+      "sinkLine": 34,
+      "why": "문자열을 이어 붙이지만 정렬 열을 허용 목록으로 먼저 거른다"
+    },
+    {
+      "id": "command-uptime",
+      "category": "COMMAND",
+      "file": "src/main/java/com/example/shop/admin/DiagnosticsController.java",
+      "lines": [21, 25],
+      "sinkLine": 23,
+      "why": "고정된 명령만 실행한다"
+    },
+    {
+      "id": "path-image-checked",
+      "category": "PATH",
+      "file": "src/main/java/com/example/shop/file/FileController.java",
+      "lines": [24, 31],
+      "sinkLine": 30,
+      "why": "normalize 후 기준 폴더 안인지 startsWith 로 확인한다"
+    },
+    {
+      "id": "ssrf-partner-allowlist",
+      "category": "SSRF",
+      "file": "src/main/java/com/example/shop/webhook/WebhookController.java",
+      "lines": [30, 37],
+      "sinkLine": 36,
+      "why": "사용자는 협력사 이름만 고르고 주소는 고정된 목록에서 꺼낸다"
+    },
+    {
+      "id": "idor-receipt-checked",
+      "category": "IDOR",
+      "file": "src/main/java/com/example/shop/order/OrderController.java",
+      "lines": [26, 33],
+      "sinkLine": 28,
+      "why": "주문의 고객 id 가 요청한 고객과 같은지 확인한다"
+    },
+    {
+      "id": "xxe-catalog-hardened",
+      "category": "XXE",
+      "file": "src/main/java/com/example/shop/importer/ImportController.java",
+      "lines": [36, 46],
+      "sinkLine": 44,
+      "why": "DOCTYPE 을 막고 외부 DTD·스키마 접근을 끈다"
+    },
+    {
+      "id": "redirect-logout",
+      "category": "OPEN_REDIRECT",
+      "file": "src/main/java/com/example/shop/auth/LoginController.java",
+      "lines": [27, 30],
+      "sinkLine": 29,
+      "why": "고정된 주소로만 이동한다"
+    },
+    {
+      "id": "random-banner",
+      "category": "WEAK_RANDOM",
+      "file": "src/main/java/com/example/shop/auth/ResetTokenService.java",
+      "lines": [24, 27],
+      "sinkLine": 25,
+      "why": "배너 고르기라서 예측 가능해도 보안 문제가 아니다"
+    },
+    {
+      "id": "xss-summary-sanitized",
+      "category": "XSS",
+      "file": "frontend/src/ProductReview.tsx",
+      "lines": [9, 11],
+      "sinkLine": 10,
+      "why": "DOMPurify.sanitize 로 거른 HTML 만 넣는다"
+    }
+  ]
+}

@@ -35,8 +35,11 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v5
 
-      - name: 테스트
+      - name: 테스트 (벤치마크 위험 지점 검사 BenchmarkSinkTest 포함)
         run: ./gradlew test --no-daemon
+
+      - name: 벤치마크 채점 스크립트 테스트
+        run: python3 -m unittest discover -s benchmark -v
 
       - name: 테스트 결과 보관
         if: failure()

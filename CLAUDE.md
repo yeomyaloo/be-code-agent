@@ -8,6 +8,8 @@ Java/Spring 소스코드를 정적 파싱해 코드 그래프를 만들고, Clau
 ./gradlew bootRun     # 실행 (localhost:8080, PostgreSQL 필요)
 ./gradlew test        # 전체 테스트
 ./gradlew test --tests '*CodeGraphBuilderTest'   # DB 없이 도는 테스트만
+python -m unittest discover -s benchmark         # 벤치마크 채점 스크립트 테스트
+python benchmark/run.py --runs 3                 # 실제 LLM 으로 벤치마크 채점 (서버·API 키 필요, 수동)
 ```
 
 - Windows PowerShell에서는 `.\gradlew.bat`.
@@ -34,6 +36,7 @@ Java/Spring 소스코드를 정적 파싱해 코드 그래프를 만들고, Clau
 - 새 도구는 `AgentTool`을 구현한 `@Component`로 추가하고, 쓸 역할의 화이트리스트(`AnalysisService.WORKER_TOOLS`/`PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`)에 이름을 넣는다. 입력 오류는 `ToolInputException`으로 던진다(Claude에게 오류로 전달됨).
 - 파일 접근 도구는 반드시 `RepoPaths.resolve()`로 경로를 검사한다(저장소 밖 접근 차단).
 - 위험 지점 규칙은 `codegraph/ingest/SinkRules.java`(새 분류는 `CATEGORY_ORDER` 에도), 진입점 탐지는 `EntryPointDetector.java`. 프론트엔드(JS/TS/Vue/HTML) 규칙은 `FrontendScanner.java`(줄 단위 정규식, 비밀값은 snippet 에서 가린다). 프론트엔드 위험 지점은 props `frontend=true` 이고 진입점 경로가 없다.
+- 평가 하네스는 `benchmark/`. 정답 파일(`shop-app.expected.json`)은 분석 대상 폴더 밖에 둔다(에이전트가 읽으면 안 됨). 벤치마크 앱에 힌트 주석을 달지 않는다. 위험 지점 규칙을 바꾸면 `BenchmarkSinkTest` 가 정답의 위험 지점 목록과 정확히 같은지 본다. 앱을 고치면 정답 파일의 줄 번호도 고친다.
 - 테스트는 실제 OSV 에 요청하지 않는다. `OsvClientTest` 처럼 로컬 HttpServer 로 흉내 낸다.
 
 ## 코드 규칙

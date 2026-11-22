@@ -74,3 +74,7 @@ workspace/
 
 ### docker compose 로 마운트하는 로컬 저장소 ###
 repos/
+
+### 벤치마크 ###
+benchmark/results/
+__pycache__/

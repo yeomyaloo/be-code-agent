@@ -182,6 +182,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 10-3 | Record the analyzed commit on each analysis job | ✅ Done |
 | 10-4 | More IDOR candidates: id-only repository queries (`@Query`, derived), MyBatis mappers, saving a request body | ✅ Done |
 | 11 | Frontend code: JS/TS/Vue/HTML risky patterns as sinks (XSS, eval, open redirect, token storage, postMessage, hardcoded secrets), npm dependency CVEs | ✅ Done |
+| 12 | Evaluation harness: benchmark app with an answer key (11 vulnerabilities, 10 safe look-alikes), CI check that the code graph covers it, LLM scoring script (recall, precision, trap false positives, run-to-run consistency) | ✅ Done |
 
 ---
 
@@ -425,6 +426,7 @@ The code graph must be built first. `paths` returns 400 if there is not a single
 - `CodeGraphReindexTest` copies the sample app to a temporary folder, edits and deletes files, and checks rebuilding (node ids kept, anchors preserved, removed nodes cleaned up). Requires PostgreSQL.
 - `AnalysisFlowTest` uses a fake `AgentLoop` that calls the tools directly instead of real Claude, and checks the flow task creation → distribution → recording facts and findings → verification verdicts (confirmed, false positive, no verdict submitted) → job end, plus the Worker and Verifier tool sets and re-running verification. It needs no API key but needs PostgreSQL.
 - `PlannerFlowTest` checks the LLM planning flow the same way: planning round 1 (path tasks + authorization checks without paths, DEPENDS_ON, rejecting duplicates and invalid nodes) → Worker execution order → round 2 (reading conclusions with get_plan, follow-ups, rejecting going over the limit, finish_planning) → round 3 skipped, and cascading failure when a prerequisite fails.
+- **Benchmark (evaluation harness)**: [`benchmark/`](benchmark/README.md) has a small shop app with 11 real vulnerabilities and 10 safe look-alikes, and an answer key kept outside the app folder. `BenchmarkSinkTest` (no DB, runs in CI) checks that every item becomes a sink reachable from its entry point. To measure the LLM itself (recall, precision, trap false positives and whether repeated runs agree), start the server with an API key and run `python benchmark/run.py --runs 3`; `benchmark/score.py` also scores SARIF exported from the Claude Code plugin.
 - **Adding a tool**: create a `@Component` implementing `agent/tool/AgentTool`, and add its name to the tool list of each role that uses it (`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`). For invalid input, throw `ToolInputException`; it is passed to Claude as an error so it can retry.
 - **Adding a sink rule**: add `rule(type FQN, category, CWE, methods...)` to `RULES` in `codegraph/ingest/SinkRules.java`. Write constructors as the method name `<init>`. Put a new category in `CATEGORY_ORDER` (investigation priority) too.
 - **Adding an entry point kind**: extend `codegraph/ingest/EntryPointDetector.java`.
@@ -570,6 +572,8 @@ be-code-agent/
 ├── build.gradle, settings.gradle, gradlew          Gradle build
 ├── Dockerfile, docker-compose.yml, .env.example    One-click Docker Compose setup
 ├── .github/workflows/docker-compose.yml            Checks the Docker setup on GitHub Actions
+├── .github/workflows/test.yml                      Runs the tests on GitHub Actions (PostgreSQL, benchmark scoring)
+├── benchmark/                                      evaluation harness: shop-app (answer key outside), score.py, run.py
 ├── src/main/java/com/codeagent/
 │   ├── CodeAgentApplication.java                    entry point
 │   ├── project/                                     repositories under analysis (Project), analysis jobs (AnalysisJob)
@@ -838,6 +842,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 10-3 | 분석 작업마다 분석한 커밋 기록 | ✅ 완료 |
 | 10-4 | IDOR 후보 확대: id 하나로 조회하는 저장소 쿼리(`@Query`, 파생 쿼리), MyBatis 매퍼, 요청 본문 그대로 저장 | ✅ 완료 |
 | 11 | 프론트엔드 코드: JS/TS/Vue/HTML의 위험한 패턴을 위험 지점으로 (XSS, eval, 오픈 리다이렉트, 토큰 저장, postMessage, 하드코딩된 비밀값), npm 라이브러리 CVE | ✅ 완료 |
+| 12 | 평가 하네스: 정답이 있는 벤치마크 앱(취약점 11개, 안전한 함정 10개), 코드 그래프가 다 잡는지 CI 검사, LLM 채점 스크립트(재현율, 정밀도, 함정 오탐, 실행 간 일관성) | ✅ 완료 |
 
 ---
 
@@ -1081,6 +1086,7 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 - `CodeGraphReindexTest`는 예제 앱을 임시 폴더에 복사해서 파일을 고치고 지우며 다시 만들기를 검증한다 (노드 id 유지, 연결점 보존, 사라진 노드 정리). PostgreSQL이 필요하다.
 - `AnalysisFlowTest`는 실제 Claude 대신 가짜 `AgentLoop`가 도구를 직접 호출해서 할 일 생성 → 배분 → 사실·발견 기록 → 검증 판정(확정·오탐·판정 미제출) → 작업 종료 흐름과, Worker·Verifier 도구 구성, 검증 재실행을 검증한다. API 키는 필요 없지만 PostgreSQL이 필요하다.
 - `PlannerFlowTest`는 같은 방식으로 LLM 계획 흐름을 검증한다: 계획 1회차(경로 할 일 + 경로 없는 권한 점검, DEPENDS_ON, 중복·잘못된 노드 거절) → Worker 실행 순서 → 2회차(get_plan 으로 결론 확인, 보완, 상한 초과 거절, finish_planning) → 3회차 생략, 선행 할 일 실패 시 연쇄 실패 처리.
+- **벤치마크 (평가 하네스)**: [`benchmark/`](benchmark/README.md)에 진짜 취약점 11개와 안전한 함정 10개를 섞은 작은 쇼핑몰과, 앱 폴더 밖에 둔 정답 파일이 있다. `BenchmarkSinkTest`(DB 없이, CI 에서 돈다)는 모든 항목이 위험 지점이 되고 진입점에서 이어지는지 확인한다. LLM 자체의 성능(재현율, 정밀도, 함정 오탐, 여러 번 돌려도 같은 결론인지)은 API 키를 넣고 서버를 띄운 뒤 `python benchmark/run.py --runs 3` 으로 잰다. Claude Code 플러그인에서 받은 SARIF 도 `benchmark/score.py` 로 채점할 수 있다.
 - **도구 추가**: `agent/tool/AgentTool`을 구현한 `@Component`를 만들고, 쓸 역할의 도구 목록(`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`)에 이름을 넣는다. 잘못된 입력은 `ToolInputException`을 던지면 Claude에게 오류로 전달되어 다시 시도하게 된다.
 - **위험 지점 규칙 추가**: `codegraph/ingest/SinkRules.java`의 `RULES`에 `rule(타입 FQN, 분류, CWE, 메서드...)`를 추가한다. 생성자는 메서드 이름 `<init>`으로 적는다. 새 분류면 `CATEGORY_ORDER`(조사 우선순위)에도 넣는다.
 - **진입점 종류 추가**: `codegraph/ingest/EntryPointDetector.java`를 확장한다.
@@ -1226,6 +1232,8 @@ be-code-agent/
 ├── build.gradle, settings.gradle, gradlew          Gradle 빌드
 ├── Dockerfile, docker-compose.yml, .env.example    Docker Compose 원클릭 실행
 ├── .github/workflows/docker-compose.yml            GitHub Actions 로 Docker 실행 확인
+├── .github/workflows/test.yml                      GitHub Actions 로 테스트 (PostgreSQL, 벤치마크 채점)
+├── benchmark/                                      평가 하네스: shop-app(정답은 밖에), score.py, run.py
 ├── src/main/java/com/codeagent/
 │   ├── CodeAgentApplication.java                    진입점
 │   ├── project/                                     분석 대상 저장소(Project), 분석 작업(AnalysisJob)
