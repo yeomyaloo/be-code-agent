@@ -31,8 +31,9 @@ public class CodeGraphQuery {
     public record EntryPointView(Long id, String httpMethod, String path, String handler, String filePath, Integer line) {
     }
 
+    /** @param frontend 프론트엔드(JS/TS) 코드의 위험 지점이면 true. 진입점에서 이어지는 경로가 없다 */
     public record SinkView(Long id, String category, String cwe, String api, String method, String snippet,
-                           String filePath, Integer line) {
+                           String filePath, Integer line, boolean frontend) {
     }
 
     public record SinkPathView(EntryPointView entryPoint, SinkView sink, List<CodeNodeView> path) {
@@ -50,7 +51,8 @@ public class CodeGraphQuery {
     public List<SinkView> sinks(Long projectId) {
         return jdbcTemplate.query("""
                 select id, props ->> 'category' as category, props ->> 'cwe' as cwe, props ->> 'api' as api,
-                       props ->> 'method' as method, props ->> 'snippet' as snippet, file_path, start_line
+                       props ->> 'method' as method, props ->> 'snippet' as snippet, file_path, start_line,
+                       coalesce((props ->> 'frontend')::boolean, false) as frontend
                 from code_node where project_id = ? and kind = 'SINK' and removed_at is null
                 order by category, file_path, start_line
                 """, (rs, i) -> sink(rs), projectId);
@@ -158,6 +160,16 @@ public class CodeGraphQuery {
     private static SinkView sink(ResultSet rs) throws SQLException {
         return new SinkView(rs.getLong("id"), rs.getString("category"), rs.getString("cwe"), rs.getString("api"),
                 rs.getString("method"), rs.getString("snippet"), rs.getString("file_path"),
-                (Integer) rs.getObject("start_line"));
+                (Integer) rs.getObject("start_line"), hasColumn(rs, "frontend") && rs.getBoolean("frontend"));
+    }
+
+    private static boolean hasColumn(ResultSet rs, String column) throws SQLException {
+        var meta = rs.getMetaData();
+        for (int i = 1; i <= meta.getColumnCount(); i++) {
+            if (meta.getColumnLabel(i).equalsIgnoreCase(column)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

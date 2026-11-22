@@ -16,6 +16,6 @@ public record DependencyProperties(boolean osvEnabled, String osvUrl, int timeou
     public DependencyProperties {
         osvUrl = osvUrl == null || osvUrl.isBlank() ? "https://api.osv.dev" : osvUrl.replaceAll("/+$", "");
         timeoutSeconds = timeoutSeconds <= 0 ? 15 : timeoutSeconds;
-        maxDependencies = maxDependencies <= 0 ? 500 : maxDependencies;
+        maxDependencies = maxDependencies <= 0 ? 3000 : maxDependencies;
     }
 }

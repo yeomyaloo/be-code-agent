@@ -145,6 +145,25 @@ class ApprovalFlowTest {
     }
 
     @Test
+    void 경로_계획은_남은_자리만큼_프론트엔드_파일도_할_일로_만든다() throws InterruptedException {
+        Project project = projectRepository.save(new Project("owasp-test",
+                Path.of("src/test/resources/fixtures/owasp-app").toAbsolutePath().toString(), "java"));
+        codeGraphIndexer.index(project.getId());
+
+        AnalysisJob job = analysisService.start(project.getId(), 20, 1_000_000, PlannerMode.PATHS, true);
+        waitForStatus(job.getId(), JobStatus.WAITING_APPROVAL);
+
+        List<AnalysisNode> intentions = nodeRepository.findByJobIdOrderById(job.getId()).stream()
+                .filter(n -> n.getKind() == AnalysisNodeKind.INTENTION).toList();
+        assertThat(intentions).extracting(AnalysisNode::getTitle)
+                .contains("프론트엔드 frontend/src/auth.ts (위험 지점 5개)", "프론트엔드 frontend/src/components/Comment.tsx (위험 지점 2개)",
+                        "프론트엔드 frontend/src/legacy.js (위험 지점 1개)");
+        AnalysisNode auth = intentions.stream().filter(n -> n.getTitle().contains("auth.ts")).findFirst().orElseThrow();
+        assertThat(auth.getBody()).contains("HTTP 진입점 경로가 없습니다", "TOKEN_STORAGE", "AKIA****(가림)").doesNotContain("IOSFODNN7EXAMPLE");
+        analysisService.reject(job.getId(), "테스트");
+    }
+
+    @Test
     void 승인을_요구하지_않으면_멈추지_않는다() throws InterruptedException {
         Project project = indexedProject();
         when(agentLoop.run(any())).thenReturn(new AgentRun(Outcome.COMPLETED, "", 1, 1, 1, 0, null));

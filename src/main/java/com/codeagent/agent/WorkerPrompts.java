@@ -2,6 +2,9 @@ package com.codeagent.agent;
 
 import com.codeagent.codegraph.query.CodeGraphQuery.CodeNodeView;
 import com.codeagent.codegraph.query.CodeGraphQuery.SinkPathView;
+import com.codeagent.codegraph.query.CodeGraphQuery.SinkView;
+
+import java.util.List;
 
 import java.util.stream.Collectors;
 
@@ -35,6 +38,13 @@ public final class WorkerPrompts {
             - WEAK_RANDOM(CWE-330)이면 그 값이 토큰·비밀번호 재설정 코드·세션 값·인증 코드처럼 추측되면 안 되는 값에 쓰이는지 봅니다. 그런 곳에는 SecureRandom 을 써야 합니다.
             - 라이브러리 취약점(CWE-1395) 할 일이면, 지시에 적힌 취약한 기능을 이 코드가 실제로 부르고 외부 입력이 거기에 닿는지 확인합니다.
               버전만 낮고 취약한 기능을 쓰지 않으면 발견으로 남기지 말고, 그 사실과 고친 버전을 record_fact 로 남깁니다.
+            - 프론트엔드(JS/TS/Vue/HTML) 위험 지점은 브라우저에서 도는 코드입니다. 값의 출처를 따라갑니다:
+              URL(location.search·hash·쿼리 파라미터), postMessage, 다른 사용자가 쓴 내용이 담긴 API 응답이면 공격자가 조절할 수 있고, 상수·번역 문자열이면 아닙니다.
+              · XSS: React 의 {값} 출력은 자동 이스케이프라 안전합니다. dangerouslySetInnerHTML·innerHTML·v-html 에 들어가는 값이 DOMPurify 같은 것으로 정리되는지 봅니다.
+              · OPEN_REDIRECT: 이동할 주소를 허용 목록이나 같은 출처(/로 시작, //로 시작하지 않음)로 확인하는지 봅니다.
+              · TOKEN_STORAGE: 로그인 토큰을 localStorage 에 두면 XSS 한 번에 털립니다. 위험도는 같은 앱에 XSS 가 있는지에 따라 달라집니다. HttpOnly 쿠키가 권장입니다.
+              · POSTMESSAGE: message 이벤트에서 event.origin 을 확인하는지, postMessage 의 대상 출처가 '*' 인데 민감한 값을 보내는지 봅니다.
+              · HARDCODED_SECRET: 원래 공개용인 키(Firebase 웹 apiKey, Stripe pk_, 지도 키 등 출처 제한이 걸린 키)는 비밀이 아닙니다. 서버 전용 키·비밀 토큰이면 취약합니다. 비밀값은 기록에 그대로 적지 말고 가립니다.
             - 작업 초반에 search_worker_traces로 다른 실행 담당이 같은 코드를 이미 분석했는지 확인하면 중복을 줄일 수 있습니다.
 
             기록
@@ -73,6 +83,23 @@ public final class WorkerPrompts {
                 path.sink().category(), path.sink().cwe(), path.sink().api(), path.sink().id(),
                 path.sink().filePath(), path.sink().line(), path.sink().snippet(),
                 hops);
+    }
+
+    /** 프론트엔드 파일 하나의 위험 지점들을 조사하는 할 일 (진입점 경로 없음) */
+    public static String frontendIntention(String filePath, List<SinkView> sinks) {
+        String list = sinks.stream()
+                .map(s -> "- [%s %s] %s  (노드 id %d) %s:%s\n  코드: %s".formatted(
+                        s.category(), s.cwe(), s.api(), s.id(), s.filePath(), s.line(), s.snippet()))
+                .collect(Collectors.joining("\n"));
+        return """
+                할 일: 프론트엔드 파일의 아래 위험 지점들이 실제로 악용될 수 있는지 조사하세요.
+                프론트엔드 코드라 HTTP 진입점 경로가 없습니다. 값이 어디서 오는지(URL·location·postMessage·API 응답·사용자 입력)를 거슬러 올라가 확인하세요.
+
+                파일: %s
+
+                위험 지점:
+                %s
+                """.formatted(filePath, list);
     }
 
     /** 계획 담당이 만든 할 일. 진입점 → 위험 지점 경로가 있으면 경로 정보를 함께 붙인다 */

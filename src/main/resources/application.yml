@@ -54,7 +54,7 @@ codeagent:
     osv-enabled: ${CODEAGENT_OSV_ENABLED:true}
     osv-url: https://api.osv.dev
     timeout-seconds: 15
-    max-dependencies: 500
+    max-dependencies: 3000
   workspace:
     # Git 주소로 등록한 저장소를 클론하는 곳
     dir: ${CODEAGENT_WORKSPACE:./workspace}

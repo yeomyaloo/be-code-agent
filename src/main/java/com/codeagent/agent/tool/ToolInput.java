@@ -33,6 +33,20 @@ public record ToolInput(Map<String, Object> values) {
         return value;
     }
 
+    public Optional<Boolean> optionalBoolean(String name) {
+        Object value = values.get(name);
+        if (value == null) {
+            return Optional.empty();
+        }
+        if (value instanceof Boolean b) {
+            return Optional.of(b);
+        }
+        if (value instanceof String s && (s.equalsIgnoreCase("true") || s.equalsIgnoreCase("false"))) {
+            return Optional.of(Boolean.parseBoolean(s));
+        }
+        throw new ToolInputException("'" + name + "'은 true 또는 false 여야 함");
+    }
+
     public Optional<Long> optionalLong(String name) {
         Object value = values.get(name);
         if (value == null) {

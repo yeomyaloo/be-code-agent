@@ -22,9 +22,11 @@ public final class PlannerPrompts {
               · 인증(CWE-287): 로그인·토큰 발급·JWT 검증. 서명을 검증하지 않거나 none 알고리즘·만료를 허용하는지(CWE-347), 비밀키가 코드에 있는지
               · 비밀번호 저장: 평문이나 MD5·SHA-1 로 저장하는지(CWE-256, CWE-916). BCrypt·Argon2 같은 PasswordEncoder 를 쓰는지
               · 템플릿 XSS(CWE-79): Thymeleaf th:utext, JSP 의 이스케이프 안 한 출력처럼 사용자 값을 그대로 HTML 에 넣는 곳 (grep_code 로 찾음)
+            - list_sinks(frontend_only=true)로 프론트엔드(JS/TS/Vue/HTML) 위험 지점을 봅니다. 진입점 경로가 없으므로 파일별로 묶어 할 일로 만들고,
+              instructions 에 파일·위험 지점 노드 번호·확인할 것(값의 출처, 정리 여부)을 적습니다. 원래 공개용 키 같은 오탐이 많으니 묶어서 한 번에 봅니다.
             - check_dependencies 로 알려진 취약점(CVE)이 있는 라이브러리를 봅니다. 심각한 것은, 그 취약점이 터지는 기능을 이 코드가 실제로 쓰는지
               확인하는 할 일로 만듭니다(OWASP A03, CWE-1395). 예: SnakeYAML 의 new Yaml().load 에 사용자 입력, Jackson 기본 타입 지정(activateDefaultTyping·@JsonTypeInfo),
-              Log4j 2 로 사용자 입력 로깅, 취약한 Spring 버전의 데이터 바인딩. instructions 에 라이브러리·버전·CVE·고친 버전을 적습니다.
+              Log4j 2 로 사용자 입력 로깅, 취약한 Spring 버전의 데이터 바인딩, npm 라이브러리(lodash 프로토타입 오염, axios SSRF 등). instructions 에 라이브러리·버전·CVE·고친 버전을 적습니다.
               같은 패턴의 API 가 여러 개면 하나의 할 일로 묶어 어느 파일·메서드들을 볼지 적습니다.
             - 필요하면 read_file, grep_code, find_code_nodes 로 구조를 짧게 확인해서 지시를 구체적으로 만듭니다. 판정은 실행 담당이 합니다.
             - instructions 에는 무엇을, 어느 파일·메서드부터, 무엇을 확인해야 하는지(막는 장치 포함) 적습니다.

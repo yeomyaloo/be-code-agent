@@ -81,7 +81,18 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
   | WEAK_RANDOM | CWE-330 | `new Random()`, `Math.random`, `RandomStringUtils.random*` (only a problem for tokens, reset codes, session values) |
   | IDOR | CWE-639 | `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById` on project interfaces that extend a Spring Data repository (`JpaRepository`, `CrudRepository`, … directly or through a project base interface). Owner-scoped queries such as `findByIdAndUser` are not flagged. Also: methods declared on such repositories whose only condition is an id (derived queries like `findByBuyerId`, `@Query` methods taking a single id), MyBatis `@Mapper` methods taking a single id (`selectById(Long id)`, `@Param("orderId")`), and `save`/`saveAndFlush` called with an object bound by `@RequestBody`/`@ModelAttribute` (the body's id can overwrite someone else's data). Methods that also take an owner argument are not flagged. These are candidates: the worker checks whether the code compares the requesting user with the data owner |
 
-- **Dependency vulnerabilities (OWASP A03)**: reads libraries and versions from `pom.xml` (properties, Spring Boot parent), `build.gradle(.kts)` (variables, Spring Boot plugin), `gradle/libs.versions.toml` and `gradle.lockfile`, then asks the public [OSV](https://osv.dev) database for known vulnerabilities (CVE/GHSA, severity, fixed versions). Only library coordinates and versions are sent, never source code; turn it off with `codeagent.dependencies.osv-enabled=false`. Build tools are not run, so transitive dependencies are checked only when a `gradle.lockfile` exists. Run with `POST /api/projects/{id}/dependency-scans` and given to the Planner (`check_dependencies`), which turns serious ones into tasks that check whether the vulnerable feature is actually used.
+- **Frontend code (JS/TS/JSX/TSX/Vue/Svelte/HTML)**: 27 line-based rules find risky patterns in the repository's frontend code (no parser, so they are candidates; `node_modules`, build output, minified files and tests are skipped). They become sinks under their FILE node with no entry point path; the Planner groups them per file (`list_sinks`), and the `paths` mode adds one task per file when slots remain.
+
+  | Category | CWE | Patterns |
+  |---|---|---|
+  | XSS | CWE-79 | `dangerouslySetInnerHTML`, `innerHTML`/`outerHTML =`, `insertAdjacentHTML`, `document.write`, Vue `v-html`, Angular `[innerHTML]`/`bypassSecurityTrust*`, Svelte `{@html}`, jQuery `.html(x)` |
+  | CODE_INJECTION | CWE-95 | `eval`, `new Function`, `setTimeout`/`setInterval` with a string |
+  | OPEN_REDIRECT | CWE-601 | `location = x`, `location.href = x`, `location.assign/replace(x)`, `window.open(x)` with a non-literal |
+  | TOKEN_STORAGE | CWE-922 | login tokens in `localStorage`/`sessionStorage` (readable by any XSS) |
+  | POSTMESSAGE | CWE-346 | `message` listeners (origin check?), `postMessage(…, '*')` |
+  | HARDCODED_SECRET | CWE-798 | AWS/Google/Stripe/GitHub/Slack/LLM keys, private keys, `apiKey = "…"` (the value is masked in the graph) |
+
+- **Dependency vulnerabilities (OWASP A03)**: reads libraries and versions from `pom.xml` (properties, Spring Boot parent), `build.gradle(.kts)` (variables, Spring Boot plugin), `gradle/libs.versions.toml` and `gradle.lockfile`, plus npm's `package-lock.json`/`npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml` and exact versions in `package.json`, then asks the public [OSV](https://osv.dev) database for known vulnerabilities (CVE/GHSA, severity, fixed versions). Only library coordinates and versions are sent, never source code; turn it off with `codeagent.dependencies.osv-enabled=false`. Build tools are not run, so transitive dependencies are checked only when a `gradle.lockfile` exists. Run with `POST /api/projects/{id}/dependency-scans` and given to the Planner (`check_dependencies`), which turns serious ones into tasks that check whether the vulnerable feature is actually used.
 - **Dependency scan history**: every scan is saved with the commit it checked, and compared with the previous scan: libraries whose version changed, added and removed libraries, new vulnerabilities (a library was added or changed, or a CVE was published since) and resolved ones. The Planner sees the same comparison.
 - **Commit per analysis**: each analysis job records the commit it analyzed when it starts (the last pulled commit for Git URLs, the folder's `.git` HEAD for local paths). The API and the SARIF/HTML reports use the job's commit, so an old result never claims a newer commit.
 - **Entry point → sink path search**: a PostgreSQL recursive CTE extracts "which API reaches which sink through which methods". Calls through interfaces are followed too.
@@ -102,13 +113,14 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
     - **Stop conditions**: it never exceeds the task limit (`maxIntentions`) or the maximum number of rounds (`planner-rounds`, default 3).
   - `paths`: mechanically creates one task per entry point → sink path, using the shortest path for each (entry point, sink) pair. Riskier categories come first (command/code injection, deserialization, SQL → XXE, IDOR, path, SSRF, XSS → weak crypto and randomness).
 - **Planner tools**
-  - 6 Planner-only tools
+  - 7 Planner-only tools
 
     | Tool | What it does |
     |---|---|
     | `list_sink_paths` | Entry point → sink paths (shortest per pair), marking paths that already have a task |
     | `list_entry_points` | All HTTP entry points (including those that reach no sink; candidates for authorization checks) |
-    | `check_dependencies` | Libraries in the build files with known vulnerabilities (OSV): CVE, severity, fixed version |
+    | `list_sinks` | All sinks, including ones with no entry point path (frontend JS/TS sinks are marked) |
+    | `check_dependencies` | Libraries in the build files (Maven, Gradle, npm) with known vulnerabilities (OSV): CVE, severity, fixed version |
     | `get_plan` | Shared task list: status, round created, prerequisites, Worker conclusion summary, findings |
     | `add_intention` | Add a task (instruction, optional entry point and sink, category and CWE, prerequisites). Blocks duplicates of the same path and going over the limit |
     | `finish_planning` | End planning (no next round) |
@@ -169,6 +181,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 10-2 | Dependency scan history: compare with the previous scan (version changes, new and resolved vulnerabilities) | ✅ Done |
 | 10-3 | Record the analyzed commit on each analysis job | ✅ Done |
 | 10-4 | More IDOR candidates: id-only repository queries (`@Query`, derived), MyBatis mappers, saving a request body | ✅ Done |
+| 11 | Frontend code: JS/TS/Vue/HTML risky patterns as sinks (XSS, eval, open redirect, token storage, postMessage, hardcoded secrets), npm dependency CVEs | ✅ Done |
 
 ---
 
@@ -569,6 +582,7 @@ be-code-agent/
 │   │   │   ├── TypeResolver.java                    type name → FQN based on imports
 │   │   │   ├── EntryPointDetector.java              Spring MVC entry point detection
 │   │   │   ├── SinkRules.java, SinkRule.java        sink rules
+│   │   │   ├── FrontendScanner.java                 risky patterns in frontend JS/TS/Vue/HTML
 │   │   │   ├── CodeGraphBuilder.java                graph assembly
 │   │   │   ├── CodeGraphDraft.java                  in-memory graph before saving
 │   │   │   └── CodeGraphIndexer.java                DB storage (updates while keeping node ids)
@@ -583,7 +597,7 @@ be-code-agent/
 │   │   ├── PlannerPrompts.java                      Planner system prompt, round prompt
 │   │   ├── WorkerPrompts.java                       Worker system prompt, task prompt (path / planner instruction)
 │   │   ├── VerifierPrompts.java                     Verifier system prompt, finding prompt
-│   │   └── tool/                                    8 Worker tools, 6 Planner tools (+PlanSupport), Verifier verdict tool, input checks (ToolInput)
+│   │   └── tool/                                    8 Worker tools, 7 Planner tools (+PlanSupport), Verifier verdict tool, input checks (ToolInput)
 │   ├── orchestrator/
 │   │   ├── AnalysisService.java                     creates analysis jobs, alternates Planner rounds ↔ Worker runs, starts verification
 │   │   ├── PlannerMode.java                         task creation mode (llm / paths)
@@ -723,7 +737,18 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
   | WEAK_RANDOM | CWE-330 | `new Random()`, `Math.random`, `RandomStringUtils.random*` (토큰·재설정 코드·세션 값에 쓰일 때만 문제) |
   | IDOR | CWE-639 | Spring Data 저장소(`JpaRepository`, `CrudRepository` 등, 직접 또는 프로젝트 안의 상위 인터페이스를 거쳐 상속)의 `findById`, `getById`, `getReferenceById`, `getOne`, `deleteById`. `findByIdAndUser`처럼 주인 조건이 붙은 쿼리는 잡지 않는다. 그 밖에 저장소에 선언한 메서드 중 조건이 식별자 하나뿐인 것(`findByBuyerId` 같은 파생 쿼리, id 하나만 받는 `@Query` 메서드), MyBatis `@Mapper`의 id 하나만 받는 메서드(`selectById(Long id)`, `@Param("orderId")`), `@RequestBody`·`@ModelAttribute`로 받은 객체를 그대로 넘기는 `save`·`saveAndFlush`(본문의 id로 남의 데이터를 덮어쓸 수 있음)도 잡는다. 주인 인자를 같이 받는 메서드는 잡지 않는다. 후보일 뿐이고, 요청한 사용자와 데이터 소유자를 비교하는지는 Worker가 코드를 읽고 판단한다 |
 
-- **의존성 취약점 (OWASP A03)**: `pom.xml`(속성, Spring Boot 부모), `build.gradle(.kts)`(변수, Spring Boot 플러그인), `gradle/libs.versions.toml`, `gradle.lockfile`에서 라이브러리와 버전을 읽고, 공개 취약점 DB [OSV](https://osv.dev)에 알려진 취약점(CVE·GHSA, 심각도, 고친 버전)을 묻는다. 보내는 건 라이브러리 좌표와 버전뿐이고 소스코드는 보내지 않는다. `codeagent.dependencies.osv-enabled=false`로 끌 수 있다. 빌드 도구를 실행하지 않으므로 전이 의존성은 `gradle.lockfile`이 있을 때만 검사된다. `POST /api/projects/{id}/dependency-scans`로 검사하고, Planner(`check_dependencies`)에게도 주어서 심각한 것은 취약한 기능을 실제로 쓰는지 확인하는 할 일이 된다.
+- **프론트엔드 코드 (JS/TS/JSX/TSX/Vue/Svelte/HTML)**: 저장소의 프론트엔드 코드에서 27개 줄 단위 규칙으로 위험한 패턴을 찾는다(파서가 없으니 후보다. `node_modules`, 빌드 결과물, 압축된 파일, 테스트는 건너뛴다). FILE 노드 아래 위험 지점이 되고 진입점 경로는 없다. Planner는 `list_sinks`로 보고 파일별로 묶어 할 일로 만들고, `paths` 방식은 자리가 남으면 파일마다 할 일을 하나씩 만든다.
+
+  | 분류 | CWE | 패턴 |
+  |---|---|---|
+  | XSS | CWE-79 | `dangerouslySetInnerHTML`, `innerHTML`/`outerHTML =`, `insertAdjacentHTML`, `document.write`, Vue `v-html`, Angular `[innerHTML]`/`bypassSecurityTrust*`, Svelte `{@html}`, jQuery `.html(x)` |
+  | CODE_INJECTION | CWE-95 | `eval`, `new Function`, 문자열을 넘기는 `setTimeout`/`setInterval` |
+  | OPEN_REDIRECT | CWE-601 | 상수가 아닌 값으로 `location = x`, `location.href = x`, `location.assign/replace(x)`, `window.open(x)` |
+  | TOKEN_STORAGE | CWE-922 | 로그인 토큰을 `localStorage`/`sessionStorage`에 저장 (XSS 한 번이면 털림) |
+  | POSTMESSAGE | CWE-346 | `message` 이벤트 수신(출처 확인?), `postMessage(…, '*')` |
+  | HARDCODED_SECRET | CWE-798 | AWS·Google·Stripe·GitHub·Slack·LLM 키, 개인 키, `apiKey = "…"` (그래프에는 값을 가려서 저장) |
+
+- **의존성 취약점 (OWASP A03)**: `pom.xml`(속성, Spring Boot 부모), `build.gradle(.kts)`(변수, Spring Boot 플러그인), `gradle/libs.versions.toml`, `gradle.lockfile`과 npm의 `package-lock.json`·`npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`, `package.json`의 정확한 버전에서 라이브러리와 버전을 읽고, 공개 취약점 DB [OSV](https://osv.dev)에 알려진 취약점(CVE·GHSA, 심각도, 고친 버전)을 묻는다. 보내는 건 라이브러리 좌표와 버전뿐이고 소스코드는 보내지 않는다. `codeagent.dependencies.osv-enabled=false`로 끌 수 있다. 빌드 도구를 실행하지 않으므로 전이 의존성은 `gradle.lockfile`이 있을 때만 검사된다. `POST /api/projects/{id}/dependency-scans`로 검사하고, Planner(`check_dependencies`)에게도 주어서 심각한 것은 취약한 기능을 실제로 쓰는지 확인하는 할 일이 된다.
 - **의존성 검사 기록**: 검사할 때마다 검사한 커밋과 함께 저장하고 지난 검사와 비교한다. 버전이 바뀐 라이브러리, 추가·제거된 라이브러리, 새 취약점(라이브러리를 넣거나 바꿨거나, 그사이 CVE가 공개됨), 해결된 취약점을 보여준다. Planner도 같은 비교를 본다.
 - **분석 작업별 커밋**: 분석 작업이 시작할 때 분석하는 커밋을 기록한다(Git 주소면 마지막으로 받은 커밋, 폴더 경로면 그 폴더의 `.git` HEAD). API와 SARIF·HTML 보고서는 작업의 커밋을 써서, 예전 결과가 새 커밋을 분석한 것처럼 보이지 않는다.
 - **진입점 → 위험 지점 경로 탐색**: PostgreSQL 재귀 CTE로 "어느 API에서 어느 위험 지점까지 어떤 메서드들을 거쳐 도달하는지"를 뽑는다. 인터페이스를 거치는 호출도 따라간다.
@@ -744,13 +769,14 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
     - **멈추는 조건**: 할 일 수 상한(`maxIntentions`)과 최대 회차(`planner-rounds`, 기본 3)를 넘지 않는다.
   - `paths`: 진입점 → 위험 지점 경로마다, (진입점, 위험 지점) 쌍 하나당 가장 짧은 경로로 할 일을 기계적으로 만든다. 위험한 분류부터 고른다(명령·코드 인젝션, 역직렬화, SQL → XXE, IDOR, 경로, SSRF, XSS → 약한 암호화·난수).
 - **Planner 도구**
-  - 전용 6개
+  - 전용 7개
 
     | 도구 | 하는 일 |
     |---|---|
     | `list_sink_paths` | 진입점 → 위험 지점 경로 (쌍마다 가장 짧은 것), 이미 할 일이 있는 경로 표시 |
     | `list_entry_points` | HTTP 진입점 전체 (위험 지점에 닿지 않는 것 포함, 권한 점검 후보) |
-    | `check_dependencies` | 빌드 파일의 라이브러리 중 알려진 취약점(OSV)이 있는 것: CVE, 심각도, 고친 버전 |
+    | `list_sinks` | 위험 지점 전체 (진입점 경로가 없는 것 포함, 프론트엔드 JS/TS 위험 지점 표시) |
+    | `check_dependencies` | 빌드 파일(Maven, Gradle, npm)의 라이브러리 중 알려진 취약점(OSV)이 있는 것: CVE, 심각도, 고친 버전 |
     | `get_plan` | 공유 할 일 목록: 상태, 만든 회차, 선행 할 일, Worker 결론 요약, 발견 |
     | `add_intention` | 할 일 추가 (지시, 선택적으로 진입점·위험 지점, 분류·CWE, 선행 할 일). 같은 경로 중복과 상한 초과는 막는다 |
     | `finish_planning` | 계획을 끝냄 (다음 회차를 열지 않음) |
@@ -811,6 +837,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 10-2 | 의존성 검사 기록: 지난 검사와 비교 (버전 변경, 새 취약점, 해결된 취약점) | ✅ 완료 |
 | 10-3 | 분석 작업마다 분석한 커밋 기록 | ✅ 완료 |
 | 10-4 | IDOR 후보 확대: id 하나로 조회하는 저장소 쿼리(`@Query`, 파생 쿼리), MyBatis 매퍼, 요청 본문 그대로 저장 | ✅ 완료 |
+| 11 | 프론트엔드 코드: JS/TS/Vue/HTML의 위험한 패턴을 위험 지점으로 (XSS, eval, 오픈 리다이렉트, 토큰 저장, postMessage, 하드코딩된 비밀값), npm 라이브러리 CVE | ✅ 완료 |
 
 ---
 
@@ -1211,6 +1238,7 @@ be-code-agent/
 │   │   │   ├── TypeResolver.java                    import 기준 타입 이름 → FQN
 │   │   │   ├── EntryPointDetector.java              Spring MVC 진입점 탐지
 │   │   │   ├── SinkRules.java, SinkRule.java        위험 지점 규칙
+│   │   │   ├── FrontendScanner.java                 프론트엔드 JS/TS/Vue/HTML 위험 패턴
 │   │   │   ├── CodeGraphBuilder.java                그래프 조립
 │   │   │   ├── CodeGraphDraft.java                  저장 전 메모리 그래프
 │   │   │   └── CodeGraphIndexer.java                DB 저장 (노드 id 유지하며 갱신)
@@ -1225,7 +1253,7 @@ be-code-agent/
 │   │   ├── PlannerPrompts.java                      Planner 시스템 프롬프트, 회차 프롬프트
 │   │   ├── WorkerPrompts.java                       Worker 시스템 프롬프트, 할 일 프롬프트 (경로 / 계획 지시)
 │   │   ├── VerifierPrompts.java                     Verifier 시스템 프롬프트, 발견 프롬프트
-│   │   └── tool/                                    Worker 도구 8개, Planner 도구 6개(+PlanSupport), Verifier 판정 도구, 입력 검증(ToolInput)
+│   │   └── tool/                                    Worker 도구 8개, Planner 도구 7개(+PlanSupport), Verifier 판정 도구, 입력 검증(ToolInput)
 │   ├── orchestrator/
 │   │   ├── AnalysisService.java                     분석 작업 생성, Planner 회차 ↔ Worker 실행 반복, 검증 단계 시작
 │   │   ├── PlannerMode.java                         할 일 생성 방식 (llm / paths)

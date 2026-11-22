@@ -68,6 +68,10 @@ public class JavaProject {
         return types.values();
     }
 
+    public Path root() {
+        return root;
+    }
+
     public Optional<TypeInfo> type(String fqn) {
         return Optional.ofNullable(fqn).map(types::get);
     }

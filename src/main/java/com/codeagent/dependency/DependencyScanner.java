@@ -1,5 +1,7 @@
 package com.codeagent.dependency;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -23,7 +25,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * 저장소의 빌드 파일(pom.xml, build.gradle(.kts), gradle/libs.versions.toml, gradle.lockfile)에서 라이브러리와 버전을 읽는다.
+ * 저장소의 빌드 파일(pom.xml, build.gradle(.kts), gradle/libs.versions.toml, gradle.lockfile)과
+ * npm 파일(package.json, package-lock.json, npm-shrinkwrap.json, yarn.lock, pnpm-lock.yaml)에서 라이브러리와 버전을 읽는다.
  * 빌드 도구를 실행하지 않고 파일만 읽으므로, 전이 의존성은 gradle.lockfile 이 있을 때만 알 수 있다.
  * 버전이 적혀 있지 않은 Spring Boot 스타터는 Spring Boot 플러그인·부모 POM 의 버전으로 채운다.
  */
@@ -37,6 +40,12 @@ public final class DependencyScanner {
     private static final String BOOT_GROUP = "org.springframework.boot";
     private static final int MAX_DEPTH = 8;
     private static final long MAX_FILE_BYTES = 2_000_000;
+    /** npm 잠금 파일은 전이 의존성까지 담아서 크다 */
+    private static final long MAX_LOCKFILE_BYTES = 50_000_000;
+    private static final Pattern NPM_EXACT_VERSION = Pattern.compile("^[=v]?(\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?)$");
+    private static final Pattern YARN_VERSION = Pattern.compile("^\\s+version:?\\s+\"?([^\"\\s]+)\"?\\s*$");
+    private static final Pattern PNPM_PACKAGE = Pattern.compile("^\\s{2}['\"]?/?((?:@[^/@\\s'\"]+/)?[^@\\s/'\"]+)@(\\d[^:'\"()\\s]*)");
+    private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private static final Pattern GRADLE_COORDINATE = Pattern.compile("['\"]([\\w.\\-]+):([\\w.\\-]+):([^'\"@:\\s]+)(?::[\\w\\-]+)?(?:@\\w+)?['\"]");
     private static final Pattern GRADLE_MAP = Pattern.compile(
@@ -74,6 +83,10 @@ public final class DependencyScanner {
                 case "pom.xml" -> collector.readPom(file);
                 case "libs.versions.toml" -> collector.readVersionCatalog(file);
                 case "gradle.lockfile" -> collector.readLockfile(file);
+                case "package.json" -> collector.readPackageJson(file);
+                case "package-lock.json", "npm-shrinkwrap.json" -> collector.readNpmLock(file);
+                case "yarn.lock" -> collector.readYarnLock(file);
+                case "pnpm-lock.yaml" -> collector.readPnpmLock(file);
                 default -> {
                     if (name.startsWith("build.gradle")) {
                         collector.readGradle(file);
@@ -91,7 +104,7 @@ public final class DependencyScanner {
                     .filter(p -> !Files.isSymbolicLink(p))
                     .filter(p -> isBuildFile(p.getFileName().toString()))
                     .filter(p -> !skipped(root.relativize(p)))
-                    .filter(p -> p.toFile().length() <= MAX_FILE_BYTES)
+                    .filter(p -> p.toFile().length() <= (isLockfile(p.getFileName().toString()) ? MAX_LOCKFILE_BYTES : MAX_FILE_BYTES))
                     .sorted()
                     .toList();
         } catch (IOException e) {
@@ -102,7 +115,13 @@ public final class DependencyScanner {
     private static boolean isBuildFile(String name) {
         return name.equals("pom.xml") || name.equals("build.gradle") || name.equals("build.gradle.kts")
                 || name.equals("settings.gradle") || name.equals("settings.gradle.kts")
-                || name.equals("gradle.properties") || name.equals("libs.versions.toml") || name.equals("gradle.lockfile");
+                || name.equals("gradle.properties") || name.equals("libs.versions.toml") || name.equals("gradle.lockfile")
+                || name.equals("package.json") || isLockfile(name);
+    }
+
+    private static boolean isLockfile(String name) {
+        return name.equals("package-lock.json") || name.equals("npm-shrinkwrap.json") || name.equals("yarn.lock")
+                || name.equals("pnpm-lock.yaml");
     }
 
     /** 빌드 결과물 폴더와 테스트 자료(src/test)의 빌드 파일은 이 프로젝트의 의존성이 아니다 */
@@ -298,6 +317,116 @@ public final class DependencyScanner {
                 if (m.matches() && !m.group(4).isBlank()) {
                     boolean testOnly = Stream.of(m.group(4).split(",")).allMatch(c -> c.trim().toLowerCase().startsWith("test"));
                     add(m.group(1), m.group(2), m.group(3), file, i + 1, testOnly ? "test" : "lockfile");
+                }
+            }
+        }
+
+        // ---- npm ----
+
+        /** package.json 은 범위(^1.2.0)로 적는 경우가 많아서, 정확한 버전만 쓰고 나머지는 잠금 파일에 맡긴다 */
+        void readPackageJson(Path file) {
+            String text = read(file);
+            JsonNode root;
+            try {
+                root = JSON.readTree(text);
+            } catch (RuntimeException e) {
+                return;
+            }
+            for (String section : List.of("dependencies", "devDependencies", "optionalDependencies")) {
+                for (var entry : root.path(section).properties()) {
+                    String name = entry.getKey();
+                    String spec = entry.getValue().asString("");
+                    Matcher exact = NPM_EXACT_VERSION.matcher(spec.trim());
+                    int line = lineOf(text, text.indexOf("\"" + name + "\""));
+                    String scope = section.equals("devDependencies") ? "dev" : "dependency";
+                    if (exact.matches()) {
+                        add(Dependency.NPM, name, exact.group(1), file, line, scope);
+                    } else {
+                        unversioned.putIfAbsent(Dependency.NPM + ":" + name, relative(file) + (line > 0 ? ":" + line : ""));
+                    }
+                }
+            }
+        }
+
+        /** package-lock.json / npm-shrinkwrap.json (lockfileVersion 1, 2, 3) */
+        void readNpmLock(Path file) {
+            JsonNode root;
+            try {
+                root = JSON.readTree(read(file));
+            } catch (RuntimeException e) {
+                return;
+            }
+            JsonNode packages = root.path("packages");
+            if (packages.isObject() && !packages.isEmpty()) {
+                for (var entry : packages.properties()) {
+                    String path = entry.getKey();
+                    JsonNode pkg = entry.getValue();
+                    int at = path.lastIndexOf("node_modules/");
+                    if (at < 0 || pkg.path("link").asBoolean(false) || !pkg.has("version")) {
+                        continue;
+                    }
+                    String name = pkg.has("name") ? pkg.path("name").asString() : path.substring(at + "node_modules/".length());
+                    add(Dependency.NPM, name, pkg.path("version").asString(), file, 0, pkg.path("dev").asBoolean(false) ? "dev" : "lockfile");
+                }
+                return;
+            }
+            readNpmLockV1(root.path("dependencies"), file);
+        }
+
+        private void readNpmLockV1(JsonNode dependencies, Path file) {
+            for (var entry : dependencies.properties()) {
+                JsonNode pkg = entry.getValue();
+                if (pkg.has("version") && NPM_EXACT_VERSION.matcher(pkg.path("version").asString()).matches()) {
+                    add(Dependency.NPM, entry.getKey(), pkg.path("version").asString(), file, 0,
+                            pkg.path("dev").asBoolean(false) ? "dev" : "lockfile");
+                }
+                readNpmLockV1(pkg.path("dependencies"), file);
+            }
+        }
+
+        /** yarn.lock (v1 과 Berry). "이름@범위": 다음 줄들 중 version 줄을 읽는다 */
+        void readYarnLock(Path file) {
+            List<String> lines = lines(file);
+            String name = null;
+            int headerLine = 0;
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                if (!line.isEmpty() && !Character.isWhitespace(line.charAt(0)) && line.endsWith(":") && !line.startsWith("#")
+                        && !line.startsWith("__metadata")) {
+                    name = yarnName(line.substring(0, line.length() - 1).split(",")[0].trim().replace("\"", ""));
+                    headerLine = i + 1;
+                    continue;
+                }
+                Matcher version = YARN_VERSION.matcher(line);
+                if (name != null && version.matches()) {
+                    add(Dependency.NPM, name, version.group(1), file, headerLine, "lockfile");
+                    name = null;
+                }
+            }
+        }
+
+        private static String yarnName(String spec) {
+            int npm = spec.indexOf("@npm:");
+            if (npm > 0) {
+                return spec.substring(0, npm);
+            }
+            int at = spec.lastIndexOf('@');
+            return at > 0 ? spec.substring(0, at) : spec;
+        }
+
+        /** pnpm-lock.yaml 의 packages: 아래 "이름@버전:" 줄 */
+        void readPnpmLock(Path file) {
+            List<String> lines = lines(file);
+            boolean inPackages = false;
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                if (!line.isEmpty() && !Character.isWhitespace(line.charAt(0))) {
+                    inPackages = line.startsWith("packages:") || line.startsWith("snapshots:");
+                    continue;
+                }
+                Matcher m = PNPM_PACKAGE.matcher(line);
+                if (inPackages && m.find()) {
+                    add(Dependency.NPM, m.group(1), m.group(2), file, i + 1, "lockfile");
                 }
             }
         }

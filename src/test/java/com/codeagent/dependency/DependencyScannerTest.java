@@ -57,6 +57,33 @@ class DependencyScannerTest {
     }
 
     @Test
+    void npm_잠금_파일과_package_json_을_읽는다() {
+        ScanResult result = DependencyScanner.scan(FIXTURES.resolve("deps-npm"));
+
+        assertThat(result.files()).containsExactlyInAnyOrder("pnpm-app/pnpm-lock.yaml", "web/package-lock.json", "web/package.json", "yarn-app/yarn.lock");
+        assertThat(result.dependencies())
+                .extracting(d -> d.coordinate() + ":" + d.version() + " " + d.scope())
+                .containsExactlyInAnyOrder(
+                        // package-lock.json: 전이 의존성(중첩 node_modules), dev 표시, 범위 패키지(@babel)
+                        "npm:react:18.2.0 lockfile",
+                        "npm:lodash:4.17.15 lockfile",
+                        "npm:jest:29.7.0 dev",
+                        "npm:minimist:0.0.8 lockfile",
+                        "npm:@babel/core:7.24.0 dev",
+                        // yarn.lock
+                        "npm:@babel/code-frame:7.22.13 lockfile",
+                        "npm:axios:0.21.1 lockfile",
+                        // pnpm-lock.yaml (packages 와 snapshots 에 같은 것이 있어도 한 번)
+                        "npm:express:4.17.1 lockfile",
+                        "npm:@types/node:20.11.0 lockfile");
+        // package.json 의 범위 버전은 잠금 파일에 없을 때만 버전 모름으로 남는다
+        assertThat(result.unversioned()).containsExactly("npm:left-pad (web/package.json:7)");
+        Dependency axios = result.dependencies().stream().filter(d -> d.artifact().equals("axios")).findFirst().orElseThrow();
+        assertThat(axios.ecosystem()).isEqualTo("npm");
+        assertThat(axios.osvName()).isEqualTo("axios");
+    }
+
+    @Test
     void 외부_엔티티가_든_POM_은_읽지_않는다(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("pom.xml"), """
                 <?xml version="1.0"?>

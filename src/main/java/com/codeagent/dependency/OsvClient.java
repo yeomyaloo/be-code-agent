@@ -23,7 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * OSV(https://osv.dev) 공개 취약점 DB 에 Maven 라이브러리의 알려진 취약점을 묻는다.
+ * OSV(https://osv.dev) 공개 취약점 DB 에 Maven·npm 라이브러리의 알려진 취약점을 묻는다.
  * 보내는 것은 라이브러리 좌표와 버전뿐이고, 소스코드는 보내지 않는다.
  */
 @Component
@@ -60,7 +60,7 @@ public class OsvClient {
         ArrayNode queries = body.putArray("queries");
         for (Dependency d : batch) {
             ObjectNode query = queries.addObject();
-            query.putObject("package").put("ecosystem", "Maven").put("name", d.coordinate());
+            query.putObject("package").put("ecosystem", d.ecosystem()).put("name", d.osvName());
             query.put("version", d.version());
         }
         JsonNode response = send(HttpRequest.newBuilder(URI.create(properties.osvUrl() + "/v1/querybatch"))
@@ -110,7 +110,7 @@ public class OsvClient {
         node.path("database_specific").path("cwe_ids").forEach(c -> cwes.add(c.asString()));
         Set<String> fixed = new LinkedHashSet<>();
         for (JsonNode affected : node.path("affected")) {
-            if (!dependency.coordinate().equals(affected.path("package").path("name").asString())) {
+            if (!dependency.osvName().equals(affected.path("package").path("name").asString())) {
                 continue;
             }
             for (JsonNode range : affected.path("ranges")) {

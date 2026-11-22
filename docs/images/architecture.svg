@@ -45,7 +45,7 @@
   <text x="78" y="254" class="h">① 저장소 받기 + 코드 그래프 생성</text>
   <rect x="336" y="240" width="96" height="20" rx="10" fill="#ffffff" stroke="#2f81f7"/>
   <text x="384" y="254" text-anchor="middle" class="m">LLM 사용 안 함</text>
-  <text x="78" y="282" class="t">Git 얕은 클론 → JavaParser 파싱 → 진입점 · 위험 지점(54개 규칙, CWE) · 호출 경로</text>
+  <text x="78" y="282" class="t">Git 얕은 클론 → JavaParser 파싱 → 진입점 · 위험 지점(Java 54 + JS/TS 27개 규칙) · 호출 경로</text>
 
   <line x1="160" y1="298" x2="160" y2="326" class="edge" marker-end="url(#arrow)"/>
   <text x="168" y="317" class="m">진입점 → 위험 지점 경로</text>
@@ -79,9 +79,9 @@
   <line x1="370" y1="428" x2="370" y2="456" class="edge" marker-end="url(#arrow)"/>
   <line x1="585" y1="428" x2="585" y2="456" class="edge" marker-end="url(#arrow)"/>
   <rect x="60" y="458" width="620" height="88" rx="10" fill="#fbf7ff" stroke="#8250df" stroke-width="1.4"/>
-  <text x="78" y="480" class="h">도구 15개</text>
+  <text x="78" y="480" class="h">도구 16개</text>
   <text x="156" y="480" class="m">역할마다 쓸 수 있는 도구가 다름. LLM이 골라서 요청하면 백엔드가 실행</text>
-  <text x="78" y="500" class="code" style="font-size:10px">Planner  list_sink_paths/entry_points · check_dependencies · get_plan · add_intention · finish_planning</text>
+  <text x="78" y="500" class="code" style="font-size:10px">Planner  list_sink_paths/entry_points/sinks · check_dependencies · get_plan · add_intention · finish_planning</text>
   <text x="78" y="518" class="code" style="font-size:11px">Worker   read_file · grep_code · find_code_nodes · get_callers/callees · record_fact/finding</text>
   <text x="78" y="536" class="code" style="font-size:11px">Verifier 읽기 도구 + submit_verdict   (공통 읽기 도구는 Planner 도 씀)</text>
 

@@ -65,6 +65,9 @@ class OsvClientTest {
         Map<Dependency, List<Vulnerability>> result = client.query(List.of(junit, yaml));
 
         assertThat(batchBody.get()).contains("\"ecosystem\":\"Maven\"", "\"name\":\"org.yaml:snakeyaml\"", "\"version\":\"1.29\"");
+
+        client.query(List.of(new Dependency("npm", "lodash", "4.17.15", "package-lock.json", 0, "lockfile")));
+        assertThat(batchBody.get()).contains("\"ecosystem\":\"npm\"", "\"name\":\"lodash\"");
         assertThat(result.get(junit)).isEmpty();
         Vulnerability vuln = result.get(yaml).getFirst();
         assertThat(vuln.displayId()).isEqualTo("CVE-2022-1471");

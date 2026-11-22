@@ -13,6 +13,7 @@ import com.codeagent.agent.tool.FinishPlanningTool;
 import com.codeagent.agent.tool.GetPlanTool;
 import com.codeagent.agent.tool.ListEntryPointsTool;
 import com.codeagent.agent.tool.ListSinkPathsTool;
+import com.codeagent.agent.tool.ListSinksTool;
 import com.codeagent.agent.tool.ToolContext;
 import com.codeagent.analysisgraph.AnalysisEvents;
 import com.codeagent.analysisgraph.AnalysisGraphService;
@@ -25,6 +26,7 @@ import com.codeagent.codegraph.ingest.SinkRules;
 import com.codeagent.codegraph.query.CodeGraphQuery;
 import com.codeagent.codegraph.query.CodeGraphQuery.CodeNodeView;
 import com.codeagent.codegraph.query.CodeGraphQuery.SinkPathView;
+import com.codeagent.codegraph.query.CodeGraphQuery.SinkView;
 import com.codeagent.llm.AgentProperties;
 import com.codeagent.llm.ModelTier;
 import com.codeagent.project.AnalysisJob;
@@ -75,7 +77,7 @@ public class AnalysisService {
 
     /** 계획 담당이 쓰는 도구. 코드를 읽을 수는 있지만 사실·발견은 기록하지 않는다 */
     static final Set<String> PLANNER_TOOLS = Set.of(
-            ListSinkPathsTool.NAME, ListEntryPointsTool.NAME, CheckDependenciesTool.NAME, GetPlanTool.NAME, AddIntentionTool.NAME, FinishPlanningTool.NAME,
+            ListSinkPathsTool.NAME, ListEntryPointsTool.NAME, ListSinksTool.NAME, CheckDependenciesTool.NAME, GetPlanTool.NAME, AddIntentionTool.NAME, FinishPlanningTool.NAME,
             "read_file", "grep_code", "find_code_nodes", "get_callers", "get_callees", "search_worker_traces");
 
     private final ProjectRepository projectRepository;
@@ -124,7 +126,17 @@ public class AnalysisService {
         List<SinkPathView> paths = planner == PlannerMode.PATHS
                 ? shortestPathPerPair(codeGraphQuery.sinkPaths(projectId, PATH_DEPTH), maxIntentions)
                 : List.of();
-        if (planner == PlannerMode.PATHS && paths.isEmpty()) {
+        // 경로 계획: 진입점 경로가 없는 프론트엔드 위험 지점은 남은 자리만큼 파일별 할 일로 만든다
+        Map<String, List<SinkView>> frontendFiles = new LinkedHashMap<>();
+        if (planner == PlannerMode.PATHS) {
+            codeGraphQuery.sinks(projectId).stream()
+                    .filter(SinkView::frontend)
+                    .sorted(Comparator.comparingInt((SinkView s) -> SinkRules.priority(s.category())))
+                    .forEach(s -> frontendFiles.computeIfAbsent(s.filePath(), f -> new ArrayList<>()).add(s));
+        }
+        List<Map.Entry<String, List<SinkView>>> frontendTasks = frontendFiles.entrySet().stream()
+                .limit(Math.max(0, maxIntentions - paths.size())).toList();
+        if (planner == PlannerMode.PATHS && paths.isEmpty() && frontendTasks.isEmpty()) {
             throw new IllegalArgumentException("진입점에서 위험 지점까지 가는 경로가 없음. 코드 그래프를 먼저 만들었는지 확인하고, "
                     + "경로가 없으면 planner=llm 으로 권한 검사 누락 같은 문제를 찾게 할 것");
         }
@@ -157,6 +169,14 @@ public class AnalysisService {
                     path.entryPoint().id(), path.sink().id(),
                     path.path().stream().filter(n -> "METHOD".equals(n.kind())).map(CodeNodeView::id).toList(),
                     List.of());
+        }
+        for (Map.Entry<String, List<SinkView>> file : frontendTasks) {
+            analysisGraph.addIntention(job.getId(), goal.getId(),
+                    "프론트엔드 " + file.getKey() + " (위험 지점 " + file.getValue().size() + "개)",
+                    WorkerPrompts.frontendIntention(file.getKey(), file.getValue()),
+                    Map.of("category", file.getValue().getFirst().category(), "cwe", file.getValue().getFirst().cwe(),
+                            "frontend", true),
+                    null, null, List.of(), List.of());
         }
         if (planner == PlannerMode.PATHS) {
             analysisGraph.complete(goal.getId());
