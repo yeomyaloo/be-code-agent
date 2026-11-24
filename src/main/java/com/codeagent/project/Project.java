@@ -54,6 +54,11 @@ public class Project {
         return gitUrl != null;
     }
 
+    /** 코드 그래프를 만들 때 찾은 언어로 바꾼다 (예: java, python, java,python) */
+    public void detectedLanguage(String language) {
+        this.language = language;
+    }
+
     /** 다시 클론한 결과를 반영한다 */
     public void synced(String repoPath, String branch, String commitSha) {
         this.repoPath = repoPath;

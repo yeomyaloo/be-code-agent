@@ -1,0 +1,4 @@
+[project]
+name = "netinv"
+version = "0.1.0"
+dependencies = ["fastapi", "httpx", "python-nmap", "pyyaml", "sqlalchemy"]

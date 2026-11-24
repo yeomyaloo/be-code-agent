@@ -28,7 +28,8 @@ public class ListEntryPointsTool implements AgentTool {
 
     @Override
     public String description() {
-        return "Spring MVC 컨트롤러에서 찾은 HTTP 진입점 전체 목록 (메서드, 경로, 처리 메서드, 위치). "
+        return "HTTP 진입점 전체 목록 (메서드, 경로, 처리 메서드, 위치): Spring MVC 컨트롤러, FastAPI 라우트(라우터 prefix 포함). "
+                + "FastAPI 는 Depends(...) 의존 함수(인증 확인 등)도 보여준다. Depends 가 없는 라우트는 인증 누락 후보다. "
                 + "위험 지점까지 이어지지 않는 진입점도 나온다. 경로 변수({id})로 데이터를 조회·수정·삭제하는 API 는 "
                 + "소유자 확인 누락(IDOR, CWE-639) 같은 권한 문제를 점검할 후보다.";
     }
@@ -43,6 +44,14 @@ public class ListEntryPointsTool implements AgentTool {
         return List.of();
     }
 
+    static String dependencies(EntryPointView e) {
+        if (e.dependencies() == null) {
+            return "";
+        }
+        return e.dependencies().isEmpty() ? " · Depends 없음"
+                : " · Depends: " + e.dependencies().stream().map(WorkerPrompts::shortName).collect(Collectors.joining(", "));
+    }
+
     @Override
     public String execute(ToolInput input, ToolContext context) {
         List<EntryPointView> entries = codeGraphQuery.entryPoints(context.projectId());
@@ -51,7 +60,7 @@ public class ListEntryPointsTool implements AgentTool {
         }
         return "진입점 " + entries.size() + "개\n" + entries.stream()
                 .map(e -> "- " + e.httpMethod() + " " + e.path() + " (노드 " + e.id() + ") · "
-                        + WorkerPrompts.shortName(e.handler()) + " · " + e.filePath() + ":" + e.line())
+                        + WorkerPrompts.shortName(e.handler()) + " · " + e.filePath() + ":" + e.line() + dependencies(e))
                 .collect(Collectors.joining("\n"));
     }
 }
