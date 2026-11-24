@@ -4,3 +4,10 @@ plugins {
 }
 
 rootProject.name = 'code-agent'
+
+// 공용 코드 그래프 엔진(core-code-agent)을 소스로 바로 쓰려면 -PcoreCodeAgentDir=../core-code-agent
+// (또는 gradle.properties 에 같은 값). 없으면 GitHub Packages 에 배포된 버전을 받는다.
+def coreCodeAgentDir = providers.gradleProperty('coreCodeAgentDir').orNull
+if (coreCodeAgentDir) {
+	includeBuild(coreCodeAgentDir)
+}

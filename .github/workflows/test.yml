@@ -7,6 +7,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# 공용 엔진 core-code-agent 를 GitHub Packages 에서 받는다
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -37,6 +42,8 @@ jobs:
 
       - name: 테스트 (벤치마크 위험 지점 검사 BenchmarkSinkTest 포함)
         run: ./gradlew test --no-daemon
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 벤치마크 채점 스크립트 테스트
         run: python3 -m unittest discover -s benchmark -v

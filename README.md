@@ -183,6 +183,8 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 10-4 | More IDOR candidates: id-only repository queries (`@Query`, derived), MyBatis mappers, saving a request body | ✅ Done |
 | 11 | Frontend code: JS/TS/Vue/HTML risky patterns as sinks (XSS, eval, open redirect, token storage, postMessage, hardcoded secrets), npm dependency CVEs | ✅ Done |
 | 12 | Evaluation harness: benchmark app with an answer key (11 vulnerabilities, 10 safe look-alikes), CI check that the code graph covers it, LLM scoring script (recall, precision, trap false positives, run-to-run consistency) | ✅ Done |
+| 13 | Shared engine: the code graph engine moved to the [core-code-agent](https://github.com/yeomyaloo/core-code-agent) library, used by both this server and mcp-code-agent (no behavior change) | ✅ Done |
+| 14 | Python (FastAPI) analysis in the shared engine: language plugins, FastAPI entry points, Python sinks | ⏳ Planned |
 
 ---
 
@@ -419,7 +421,8 @@ The code graph must be built first. `paths` returns 400 if there is not a single
 ```
 
 - **Test database**: tests run with the `test` profile and use a separate `codeagent_test` schema in the same database, so your development data (`public` schema) is never touched. The schema is created by Flyway and wiped at the start of each test context. Point to another database with `TEST_DB_URL`.
-- `CodeGraphBuilderTest` runs without a DB. It parses a deliberately vulnerable sample app (`src/test/resources/fixtures/vulnerable-app`) and checks entry points, sinks, inheritance links and reachable paths.
+- The code graph engine's own unit tests (`CodeGraphBuilderTest`, `IdorSinkTest`, `OwaspSinkTest`) live in [core-code-agent](https://github.com/yeomyaloo/core-code-agent). This repository keeps `BenchmarkSinkTest` (no DB) as a regression check through the library.
+- The engine comes from GitHub Packages, which needs a token even for public packages: set `gpr.user`/`gpr.key` in `~/.gradle/gradle.properties` (or `GITHUB_ACTOR`/`GITHUB_TOKEN`, scope `read:packages`). To build against a local checkout instead, run with `-PcoreCodeAgentDir=../core-code-agent` (Gradle composite build). The Docker image does this with the tagged source, so it needs no token.
 - `FileToolsTest` runs without a DB. It checks range reads of the `read_file` and `grep_code` tools, blocking of paths and symlinks outside the repository, and input error handling.
 - `GitUrlPolicyTest` and `GitClonerTest` run without a DB or network. They check that disallowed URLs (http, file://, credentials, internal IPs, etc.) are refused, and test shallow clone, branch selection and the size limit against a remote repository created locally. The symlink test is skipped where the environment has no permission to create links (a regular Windows account).
 - `CodeAgentApplicationTests` starts the Spring context, so PostgreSQL must be running.
@@ -428,8 +431,8 @@ The code graph must be built first. `paths` returns 400 if there is not a single
 - `PlannerFlowTest` checks the LLM planning flow the same way: planning round 1 (path tasks + authorization checks without paths, DEPENDS_ON, rejecting duplicates and invalid nodes) → Worker execution order → round 2 (reading conclusions with get_plan, follow-ups, rejecting going over the limit, finish_planning) → round 3 skipped, and cascading failure when a prerequisite fails.
 - **Benchmark (evaluation harness)**: [`benchmark/`](benchmark/README.md) has a small shop app with 11 real vulnerabilities and 10 safe look-alikes, and an answer key kept outside the app folder. `BenchmarkSinkTest` (no DB, runs in CI) checks that every item becomes a sink reachable from its entry point. To measure the LLM itself (recall, precision, trap false positives and whether repeated runs agree), start the server with an API key and run `python benchmark/run.py --runs 3`; `benchmark/score.py` also scores SARIF exported from the Claude Code plugin.
 - **Adding a tool**: create a `@Component` implementing `agent/tool/AgentTool`, and add its name to the tool list of each role that uses it (`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`). For invalid input, throw `ToolInputException`; it is passed to Claude as an error so it can retry.
-- **Adding a sink rule**: add `rule(type FQN, category, CWE, methods...)` to `RULES` in `codegraph/ingest/SinkRules.java`. Write constructors as the method name `<init>`. Put a new category in `CATEGORY_ORDER` (investigation priority) too.
-- **Adding an entry point kind**: extend `codegraph/ingest/EntryPointDetector.java`.
+- **Adding a sink rule**: add `rule(type FQN, category, CWE, methods...)` to `RULES` in core-code-agent `rules/SinkRules.java`, release a new version and bump the dependency in `build.gradle`. Write constructors as the method name `<init>`. Put a new category in `CATEGORY_ORDER` (investigation priority) too.
+- **Adding an entry point kind**: extend core-code-agent `java/EntryPointDetector.java`.
 
 ---
 
@@ -442,7 +445,7 @@ The code graph must be built first. `paths` returns 400 if there is not a single
 | Language / framework | Java 21, Spring Boot 4.1 (Web MVC, Data JPA, Validation) |
 | Build | Gradle 9.7 |
 | DB | PostgreSQL + Flyway migrations, recursive CTEs for graph traversal |
-| Code parsing | JavaParser 3.26 + symbol solver |
+| Code parsing | [core-code-agent](https://github.com/yeomyaloo/core-code-agent) (JavaParser 3.26 + symbol solver) |
 | LLM | Anthropic Java SDK 2.68 (Worker: Claude Sonnet 5.5, Planner and Verifier: Claude Opus 5.5) |
 | Other | Lombok, virtual threads |
 
@@ -482,7 +485,7 @@ ARTEX's "asset graph + exploration graph" design, adapted to code analysis.
 ```
 Repository path
   │
-  ▼
+  ▼                        ── core-code-agent: CodeGraphEngine.analyze() ──
 JavaProject.load()         finds src/main/java roots and parses .java files (skips build, target, etc.)
   │                        pass 1: collect project type names → pass 2: index types, supertypes, methods
   ▼
@@ -580,15 +583,8 @@ be-code-agent/
 │   │   ├── ProjectService.java                      register by Git URL / local path, sync
 │   │   └── source/                                  GitUrlPolicy (URL checks), GitCloner (JGit shallow clone)
 │   ├── codegraph/
-│   │   ├── domain/                                  CodeNode, CodeEdge entities and kinds (enum)
-│   │   ├── ingest/                                  code graph construction
-│   │   │   ├── JavaProject.java                     source parsing, type and method index
-│   │   │   ├── TypeResolver.java                    type name → FQN based on imports
-│   │   │   ├── EntryPointDetector.java              Spring MVC entry point detection
-│   │   │   ├── SinkRules.java, SinkRule.java        sink rules
-│   │   │   ├── FrontendScanner.java                 risky patterns in frontend JS/TS/Vue/HTML
-│   │   │   ├── CodeGraphBuilder.java                graph assembly
-│   │   │   ├── CodeGraphDraft.java                  in-memory graph before saving
+│   │   ├── domain/                                  CodeNode, CodeEdge entities (node/edge kinds come from core-code-agent)
+│   │   ├── ingest/                                  code graph construction (parsing is in core-code-agent)
 │   │   │   └── CodeGraphIndexer.java                DB storage (updates while keeping node ids)
 │   │   └── query/CodeGraphQuery.java                queries, recursive CTE path search
 │   ├── analysisgraph/
@@ -619,7 +615,7 @@ be-code-agent/
 │       ├── V3__code_node_reindex.sql                code node indexed_at / removed_at
 │       └── V4__project_git_source.sql               project Git URL, branch, commit
 └── src/test/
-    ├── java/.../CodeGraphBuilderTest.java           code graph test (no DB)
+    ├── java/.../BenchmarkSinkTest.java              benchmark sink coverage through core-code-agent (no DB)
     ├── java/.../CodeGraphReindexTest.java           code graph rebuild test (DB required)
     ├── java/.../FileToolsTest.java                  file tool test (no DB)
     ├── java/.../AnalysisFlowTest.java               analysis flow integration test (DB required, no API key)
@@ -843,6 +839,8 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 10-4 | IDOR 후보 확대: id 하나로 조회하는 저장소 쿼리(`@Query`, 파생 쿼리), MyBatis 매퍼, 요청 본문 그대로 저장 | ✅ 완료 |
 | 11 | 프론트엔드 코드: JS/TS/Vue/HTML의 위험한 패턴을 위험 지점으로 (XSS, eval, 오픈 리다이렉트, 토큰 저장, postMessage, 하드코딩된 비밀값), npm 라이브러리 CVE | ✅ 완료 |
 | 12 | 평가 하네스: 정답이 있는 벤치마크 앱(취약점 11개, 안전한 함정 10개), 코드 그래프가 다 잡는지 CI 검사, LLM 채점 스크립트(재현율, 정밀도, 함정 오탐, 실행 간 일관성) | ✅ 완료 |
+| 13 | 공용 엔진: 코드 그래프 엔진을 [core-code-agent](https://github.com/yeomyaloo/core-code-agent) 라이브러리로 옮겨 이 서버와 mcp-code-agent 가 같이 씀 (동작 변화 없음) | ✅ 완료 |
+| 14 | 공용 엔진에 Python(FastAPI) 분석 추가: 언어 플러그인, FastAPI 진입점, 파이썬 위험 지점 | ⏳ 예정 |
 
 ---
 
@@ -1079,7 +1077,8 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 ```
 
 - **테스트 DB**: 테스트는 `test` 프로필로 돌고, 같은 DB 안의 `codeagent_test` 스키마를 따로 써서 개발 데이터(`public` 스키마)를 건드리지 않는다. 스키마는 Flyway가 만들고, 테스트용 스프링 컨텍스트가 뜰 때마다 비운다. 다른 DB를 쓰려면 `TEST_DB_URL`.
-- `CodeGraphBuilderTest`는 DB 없이 돈다. 일부러 취약하게 만든 예제 앱(`src/test/resources/fixtures/vulnerable-app`)을 파싱해서 진입점·위험 지점·상속 연결·도달 경로를 검증한다.
+- 코드 그래프 엔진 자체의 단위 테스트(`CodeGraphBuilderTest`, `IdorSinkTest`, `OwaspSinkTest`)는 [core-code-agent](https://github.com/yeomyaloo/core-code-agent)에 있다. 이 저장소는 라이브러리를 거쳐 도는 `BenchmarkSinkTest`(DB 불필요)로 회귀를 확인한다.
+- 엔진은 GitHub Packages 에서 받는데, 공개 패키지도 읽을 때 토큰이 필요하다. `~/.gradle/gradle.properties` 에 `gpr.user`/`gpr.key`(또는 `GITHUB_ACTOR`/`GITHUB_TOKEN`, 권한 `read:packages`)를 둔다. 로컬에 받은 소스로 빌드하려면 `-PcoreCodeAgentDir=../core-code-agent`(Gradle composite build). Docker 이미지는 태그의 소스를 이렇게 묶어서 토큰이 필요 없다.
 - `FileToolsTest`는 DB 없이 돈다. `read_file`·`grep_code` 도구의 범위 읽기, 저장소 밖 경로·심볼릭 링크 차단, 입력 오류 처리를 검증한다.
 - `GitUrlPolicyTest`, `GitClonerTest`는 DB·네트워크 없이 돈다. 허용하지 않는 주소(http, file://, 계정 정보, 내부망 IP 등) 거부와, 로컬에 만든 원격 저장소로 얕은 클론·브랜치 지정·크기 상한을 검증한다. 심볼릭 링크 테스트는 링크를 만들 권한이 없는 환경(Windows 일반 계정)에서는 건너뛴다.
 - `CodeAgentApplicationTests`는 스프링 컨텍스트를 띄우므로 PostgreSQL이 떠 있어야 한다.
@@ -1088,8 +1087,8 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 - `PlannerFlowTest`는 같은 방식으로 LLM 계획 흐름을 검증한다: 계획 1회차(경로 할 일 + 경로 없는 권한 점검, DEPENDS_ON, 중복·잘못된 노드 거절) → Worker 실행 순서 → 2회차(get_plan 으로 결론 확인, 보완, 상한 초과 거절, finish_planning) → 3회차 생략, 선행 할 일 실패 시 연쇄 실패 처리.
 - **벤치마크 (평가 하네스)**: [`benchmark/`](benchmark/README.md)에 진짜 취약점 11개와 안전한 함정 10개를 섞은 작은 쇼핑몰과, 앱 폴더 밖에 둔 정답 파일이 있다. `BenchmarkSinkTest`(DB 없이, CI 에서 돈다)는 모든 항목이 위험 지점이 되고 진입점에서 이어지는지 확인한다. LLM 자체의 성능(재현율, 정밀도, 함정 오탐, 여러 번 돌려도 같은 결론인지)은 API 키를 넣고 서버를 띄운 뒤 `python benchmark/run.py --runs 3` 으로 잰다. Claude Code 플러그인에서 받은 SARIF 도 `benchmark/score.py` 로 채점할 수 있다.
 - **도구 추가**: `agent/tool/AgentTool`을 구현한 `@Component`를 만들고, 쓸 역할의 도구 목록(`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`)에 이름을 넣는다. 잘못된 입력은 `ToolInputException`을 던지면 Claude에게 오류로 전달되어 다시 시도하게 된다.
-- **위험 지점 규칙 추가**: `codegraph/ingest/SinkRules.java`의 `RULES`에 `rule(타입 FQN, 분류, CWE, 메서드...)`를 추가한다. 생성자는 메서드 이름 `<init>`으로 적는다. 새 분류면 `CATEGORY_ORDER`(조사 우선순위)에도 넣는다.
-- **진입점 종류 추가**: `codegraph/ingest/EntryPointDetector.java`를 확장한다.
+- **위험 지점 규칙 추가**: core-code-agent 의 `rules/SinkRules.java` `RULES`에 `rule(타입 FQN, 분류, CWE, 메서드...)`를 추가하고, 새 버전을 배포한 뒤 `build.gradle` 의존 버전을 올린다. 생성자는 메서드 이름 `<init>`으로 적는다. 새 분류면 `CATEGORY_ORDER`(조사 우선순위)에도 넣는다.
+- **진입점 종류 추가**: core-code-agent 의 `java/EntryPointDetector.java`를 확장한다.
 
 ---
 
@@ -1102,7 +1101,7 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 | 언어 / 프레임워크 | Java 21, Spring Boot 4.1 (Web MVC, Data JPA, Validation) |
 | 빌드 | Gradle 9.7 |
 | DB | PostgreSQL + Flyway 마이그레이션, 그래프 탐색은 재귀 CTE |
-| 코드 파싱 | JavaParser 3.26 + symbol solver |
+| 코드 파싱 | [core-code-agent](https://github.com/yeomyaloo/core-code-agent) (JavaParser 3.26 + symbol solver) |
 | LLM | Anthropic Java SDK 2.68 (Worker: Claude Sonnet 5.5, Planner·Verifier: Claude Opus 5.5) |
 | 기타 | Lombok, 가상 스레드 |
 
@@ -1142,7 +1141,7 @@ ARTEX의 "자산 그래프 + 탐색 그래프" 구조를 코드 분석에 맞게
 ```
 저장소 경로
   │
-  ▼
+  ▼                        ── core-code-agent: CodeGraphEngine.analyze() ──
 JavaProject.load()         src/main/java 루트를 찾아 .java 파일 파싱 (build, target 등 제외)
   │                        1단계: 프로젝트 타입 이름 수집 → 2단계: 타입·상위 타입·메서드 색인
   ▼
@@ -1240,15 +1239,8 @@ be-code-agent/
 │   │   ├── ProjectService.java                      Git 주소 / 로컬 경로 등록, 동기화
 │   │   └── source/                                  GitUrlPolicy(주소 검사), GitCloner(JGit 얕은 클론)
 │   ├── codegraph/
-│   │   ├── domain/                                  CodeNode, CodeEdge 엔티티와 종류(enum)
-│   │   ├── ingest/                                  코드 그래프 생성
-│   │   │   ├── JavaProject.java                     소스 파싱, 타입·메서드 색인
-│   │   │   ├── TypeResolver.java                    import 기준 타입 이름 → FQN
-│   │   │   ├── EntryPointDetector.java              Spring MVC 진입점 탐지
-│   │   │   ├── SinkRules.java, SinkRule.java        위험 지점 규칙
-│   │   │   ├── FrontendScanner.java                 프론트엔드 JS/TS/Vue/HTML 위험 패턴
-│   │   │   ├── CodeGraphBuilder.java                그래프 조립
-│   │   │   ├── CodeGraphDraft.java                  저장 전 메모리 그래프
+│   │   ├── domain/                                  CodeNode, CodeEdge 엔티티 (노드·연결 종류는 core-code-agent)
+│   │   ├── ingest/                                  코드 그래프 생성 (파싱은 core-code-agent)
 │   │   │   └── CodeGraphIndexer.java                DB 저장 (노드 id 유지하며 갱신)
 │   │   └── query/CodeGraphQuery.java                조회, 재귀 CTE 경로 탐색
 │   ├── analysisgraph/
@@ -1279,7 +1271,7 @@ be-code-agent/
 │       ├── V3__code_node_reindex.sql                코드 노드 indexed_at / removed_at
 │       └── V4__project_git_source.sql               프로젝트 Git 주소·브랜치·커밋
 └── src/test/
-    ├── java/.../CodeGraphBuilderTest.java           코드 그래프 테스트 (DB 불필요)
+    ├── java/.../BenchmarkSinkTest.java              core-code-agent 로 만든 그래프의 벤치마크 위험 지점 검사 (DB 불필요)
     ├── java/.../CodeGraphReindexTest.java           코드 그래프 재생성 테스트 (DB 필요)
     ├── java/.../FileToolsTest.java                  파일 도구 테스트 (DB 불필요)
     ├── java/.../AnalysisFlowTest.java               분석 흐름 통합 테스트 (DB 필요, API 키 불필요)

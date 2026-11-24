@@ -22,7 +22,7 @@ import com.codeagent.analysisgraph.domain.AnalysisNode;
 import com.codeagent.analysisgraph.domain.AnalysisNodeKind;
 import com.codeagent.analysisgraph.domain.AnalysisNodeRepository;
 import com.codeagent.analysisgraph.domain.AnalysisNodeStatus;
-import com.codeagent.codegraph.ingest.SinkRules;
+import com.codeagent.core.rules.SinkRules;
 import com.codeagent.codegraph.query.CodeGraphQuery;
 import com.codeagent.codegraph.query.CodeGraphQuery.CodeNodeView;
 import com.codeagent.codegraph.query.CodeGraphQuery.SinkPathView;
