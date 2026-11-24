@@ -40,7 +40,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 >
 > ```bash
 > claude plugin marketplace add yeomyaloo/cotcha-pocket
-> claude plugin install code-agent@yeomyaloo-code-agent
+> claude plugin install cotcha@cotcha
 > ```
 
 ![cotcha-net architecture](docs/images/architecture.svg)
@@ -709,7 +709,7 @@ cotcha-net는 저장소 소스코드를 정적으로 파싱해 **코드 그래�
 >
 > ```bash
 > claude plugin marketplace add yeomyaloo/cotcha-pocket
-> claude plugin install code-agent@yeomyaloo-code-agent
+> claude plugin install cotcha@cotcha
 > ```
 
 ![cotcha-net 아키텍처](docs/images/architecture.svg)
