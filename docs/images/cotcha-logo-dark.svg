@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 64" width="220" height="64" role="img" aria-label="Cotcha">
+  <title>Cotcha</title>
+  <rect width="64" height="64" rx="14" fill="#0F172A"/>
+  <path d="M46.6 20.8 A19 19 0 1 0 46.6 43.2" fill="none" stroke="#F97316" stroke-width="6" stroke-linecap="round"/>
+  <g stroke="#F8FAFC" stroke-width="2.2" stroke-linecap="round">
+    <line x1="26.5" y1="30" x2="22.5" y2="27.5"/>
+    <line x1="26" y1="34.5" x2="21.5" y2="34.5"/>
+    <line x1="26.5" y1="39" x2="22.5" y2="41.5"/>
+    <line x1="37.5" y1="30" x2="41.5" y2="27.5"/>
+    <line x1="38" y1="34.5" x2="42.5" y2="34.5"/>
+    <line x1="37.5" y1="39" x2="41.5" y2="41.5"/>
+  </g>
+  <ellipse cx="32" cy="35" rx="6.2" ry="7.6" fill="#F8FAFC"/>
+  <line x1="32" y1="28.5" x2="32" y2="42" stroke="#0F172A" stroke-width="1.6"/>
+  <circle cx="32" cy="24.6" r="3.6" fill="#F8FAFC"/>
+  <text x="80" y="45" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="40" font-weight="700" letter-spacing="-1" fill="#F8FAFC">cotcha<tspan fill="#F97316">.</tspan></text>
+</svg>

@@ -16,7 +16,7 @@ import java.util.Map;
 public final class SarifWriter {
 
     private static final String SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json";
-    private static final String INFORMATION_URI = "https://github.com/yeomyaloo/be-code-agent";
+    private static final String INFORMATION_URI = "https://github.com/yeomyaloo/cotcha-net";
 
     private SarifWriter() {
     }
@@ -25,7 +25,7 @@ public final class SarifWriter {
         List<String> ruleIds = report.findings().stream().map(f -> Cwe.id(f.cwe())).distinct().toList();
 
         Map<String, Object> driver = new LinkedHashMap<>();
-        driver.put("name", "be-code-agent");
+        driver.put("name", "cotcha-net");
         driver.put("informationUri", INFORMATION_URI);
         driver.put("rules", ruleIds.stream().map(SarifWriter::rule).toList());
 

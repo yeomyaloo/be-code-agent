@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """벤치마크 채점: 정답 파일과 분석 결과(SARIF)를 비교해 재현율·정밀도·함정 오탐·일관성을 잰다.
 
-SARIF 는 be-code-agent 의 /api/analyses/{id}/report.sarif 나 mcp-code-agent 의 export_report(format=sarif) 결과다.
+SARIF 는 cotcha-net 의 /api/analyses/{id}/report.sarif 나 cotcha-pocket 의 export_report(format=sarif) 결과다.
 SARIF 를 여러 개 주면 같은 앱을 여러 번 분석한 것으로 보고, 실행마다 결과가 얼마나 같은지도 잰다.
 
     python benchmark/score.py benchmark/shop-app.expected.json run-1.sarif run-2.sarif run-3.sarif

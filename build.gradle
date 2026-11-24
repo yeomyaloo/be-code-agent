@@ -21,7 +21,7 @@ repositories {
 	exclusiveContent {
 		forRepository {
 			maven {
-				url = uri('https://maven.pkg.github.com/yeomyaloo/core-code-agent')
+				url = uri('https://maven.pkg.github.com/yeomyaloo/cotcha-trail')
 				credentials {
 					username = providers.gradleProperty('gpr.user').orElse(providers.environmentVariable('GITHUB_ACTOR')).orNull
 					password = providers.gradleProperty('gpr.key').orElse(providers.environmentVariable('GITHUB_TOKEN')).orNull
