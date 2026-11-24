@@ -16,6 +16,7 @@
 | [cotcha-net (this repo)](https://github.com/yeomyaloo/cotcha-net) | the bug-catching net | Server: Planner, Worker and Verifier agents sweep the code and double-check every catch (REST API, DB) |
 | [cotcha-pocket](https://github.com/yeomyaloo/cotcha-pocket) | the bug box in your pocket | Claude Code plugin / MCP server: run the audit right from chat |
 | [cotcha-jar](https://github.com/yeomyaloo/cotcha-jar) | the jar where caught bugs go | Web UI: paths, findings and approvals at a glance |
+| [cotcha-pinch](https://github.com/yeomyaloo/cotcha-pinch) | the touchscreen pinch, and catching a bug between two fingers | Mobile: Claude Code plugin / MCP server for Android (soon iOS) apps |
 
 **An LLM multi-agent code security analysis system that explores source code to find security vulnerabilities**
 
@@ -689,6 +690,7 @@ cotcha-net/
 | [cotcha-net (이 레포)](https://github.com/yeomyaloo/cotcha-net) | 벌레 잡는 잠자리채 | 서버: Planner·Worker·Verifier 에이전트 팀이 코드를 훑고, 잡은 것을 다시 확인한다 (REST API, DB) |
 | [cotcha-pocket](https://github.com/yeomyaloo/cotcha-pocket) | 주머니 속 채집통 | Claude Code 플러그인 / MCP 서버: 채팅에서 바로 분석한다 |
 | [cotcha-jar](https://github.com/yeomyaloo/cotcha-jar) | 잡은 벌레를 모아 두는 유리병 | 웹 화면: 경로·발견·승인을 한눈에 본다 |
+| [cotcha-pinch](https://github.com/yeomyaloo/cotcha-pinch) | 화면을 집는 손가락 제스처, 손가락으로 벌레를 집어 잡기 | 모바일: 안드로이드(곧 iOS) 앱용 Claude Code 플러그인 / MCP 서버 |
 
 **소스코드를 탐색해 보안 취약점을 찾는 LLM 멀티 에이전트 코드 보안 분석 시스템**
 
