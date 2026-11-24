@@ -42,9 +42,9 @@ services:
     restart: unless-stopped
 
   web:
-    # 웹 화면은 fe-code-agent 저장소를 바로 받아 빌드한다
+    # 웹 화면은 cotcha-jar 저장소를 바로 받아 빌드한다
     build:
-      context: ${WEB_SOURCE:-https://github.com/yeomyaloo/fe-code-agent.git#main}
+      context: ${WEB_SOURCE:-https://github.com/yeomyaloo/cotcha-jar.git#main}
     environment:
       BACKEND_URL: http://backend:8080
     depends_on:

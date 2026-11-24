@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""실행 중인 be-code-agent 로 벤치마크 앱을 N번 분석하고 SARIF 를 모아 채점한다.
+"""실행 중인 cotcha-net 로 벤치마크 앱을 N번 분석하고 SARIF 를 모아 채점한다.
 
 실제 Claude 를 부르므로 서버에 API 키가 설정되어 있어야 하고 토큰 비용이 든다. CI 에서는 돌리지 않는다.
 
@@ -62,7 +62,7 @@ def wait(base, job_id, timeout_minutes):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="be-code-agent 로 벤치마크 앱을 여러 번 분석하고 채점한다")
+    parser = argparse.ArgumentParser(description="cotcha-net 로 벤치마크 앱을 여러 번 분석하고 채점한다")
     parser.add_argument("--base-url", default="http://localhost:8080")
     parser.add_argument("--app", default=str(HERE / "shop-app"), help="분석할 벤치마크 앱 폴더")
     parser.add_argument("--expected", default=str(HERE / "shop-app.expected.json"))

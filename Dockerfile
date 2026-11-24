@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# be-code-agent 백엔드 이미지. docker compose up 으로 PostgreSQL·웹 화면과 함께 띄운다 (docker-compose.yml)
+# cotcha-net 백엔드 이미지. docker compose up 으로 PostgreSQL·웹 화면과 함께 띄운다 (docker-compose.yml)
 
 # ---- 빌드 ----
 FROM eclipse-temurin:21-jdk AS build
@@ -8,14 +8,14 @@ WORKDIR /src
 # 의존성을 먼저 받아 두면 소스만 바뀌었을 때 이 층을 다시 쓴다
 # 공용 코드 그래프 엔진은 GitHub Packages 토큰 없이 받도록 태그의 소스를 가져와 composite build 로 묶는다
 ARG CORE_CODE_AGENT_REF=v0.3.0
-ADD https://github.com/yeomyaloo/core-code-agent.git#${CORE_CODE_AGENT_REF} /core-code-agent
+ADD https://github.com/yeomyaloo/cotcha-trail.git#${CORE_CODE_AGENT_REF} /cotcha-trail
 
 COPY gradlew settings.gradle build.gradle ./
 COPY gradle gradle
-RUN chmod +x gradlew && ./gradlew --no-daemon -q -PcoreCodeAgentDir=/core-code-agent dependencies > /dev/null
+RUN chmod +x gradlew && ./gradlew --no-daemon -q -PcoreCodeAgentDir=/cotcha-trail dependencies > /dev/null
 
 COPY src src
-RUN ./gradlew --no-daemon -q -PcoreCodeAgentDir=/core-code-agent bootJar -x test
+RUN ./gradlew --no-daemon -q -PcoreCodeAgentDir=/cotcha-trail bootJar -x test
 
 # ---- 실행 ----
 FROM eclipse-temurin:21-jre

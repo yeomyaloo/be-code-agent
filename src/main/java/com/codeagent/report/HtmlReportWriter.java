@@ -55,7 +55,7 @@ public final class HtmlReportWriter {
                 .append("<style>").append(STYLE).append("</style>\n</head>\n<body>\n<main>\n");
 
         html.append("<h1>").append(e(report.projectName())).append(" 보안 분석 보고서</h1>\n")
-                .append("<div class=\"muted\">be-code-agent · 분석 작업 #").append(report.jobId()).append("</div>\n");
+                .append("<div class=\"muted\">cotcha-net · 분석 작업 #").append(report.jobId()).append("</div>\n");
 
         html.append("<div class=\"meta\">\n");
         if (report.gitUrl() != null) {

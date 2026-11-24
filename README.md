@@ -1,4 +1,21 @@
-# be-code-agent
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/cotcha-logo-dark.svg">
+    <img src="docs/images/cotcha-logo.svg" alt="Cotcha" width="260">
+  </picture>
+</p>
+
+# cotcha-net
+
+> **Cotcha** = *"Caught ya!"* Cotcha follows untrusted input from where it enters your code to where it can do damage, catches the security bugs on the way, and keeps them in a jar.
+> *Every bug ends up in the jar.*
+
+| Repository | The name means | Role |
+|---|---|---|
+| [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail) | the trail a bug leaves behind | Shared engine: parses code into a graph of entry points, sinks and the calls between them |
+| [cotcha-net (this repo)](https://github.com/yeomyaloo/cotcha-net) | the bug-catching net | Server: Planner, Worker and Verifier agents sweep the code and double-check every catch (REST API, DB) |
+| [cotcha-pocket](https://github.com/yeomyaloo/cotcha-pocket) | the bug box in your pocket | Claude Code plugin / MCP server: run the audit right from chat |
+| [cotcha-jar](https://github.com/yeomyaloo/cotcha-jar) | the jar where caught bugs go | Web UI: paths, findings and approvals at a glance |
 
 **An LLM multi-agent code security analysis system that explores source code to find security vulnerabilities**
 
@@ -6,8 +23,8 @@
 
 <a id="english"></a>
 
-be-code-agent statically parses a repository's source code into a **code graph**, and LLM agents work on top of it to trace "does user input reach a dangerous API?" in order to find and verify vulnerabilities.
-The architecture follows the dual graph + Planner/Worker design of [ARTEX](https://github.com/Autumn-27/ARTEX), but all code is written from scratch. Where ARTEX explores a **live server**, be-code-agent explores **source code**.
+cotcha-net statically parses a repository's source code into a **code graph**, and LLM agents work on top of it to trace "does user input reach a dangerous API?" in order to find and verify vulnerabilities.
+The architecture follows the dual graph + Planner/Worker design of [ARTEX](https://github.com/Autumn-27/ARTEX), but all code is written from scratch. Where ARTEX explores a **live server**, cotcha-net explores **source code**.
 
 > Current stage: **the Planner → Worker → Verifier agent structure is implemented.**
 > - **Planner (Opus)**: looks at the code graph and decides what to investigate. Besides path investigations, it also creates tasks for missing authorization checks and security configuration reviews.
@@ -17,16 +34,16 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 >
 > See [Progress](#progress) for details.
 
-> Web UI: **[fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)** (React). Register repositories, browse the code graph, start analyses, follow progress and the agent trace timeline, review findings and get reports from the browser.
+> Web UI: **[cotcha-jar](https://github.com/yeomyaloo/cotcha-jar)** (React). Register repositories, browse the code graph, start analyses, follow progress and the agent trace timeline, review findings and get reports from the browser.
 
-> Chat version: **[mcp-code-agent](https://github.com/yeomyaloo/mcp-code-agent)** runs the same kind of audit from chat as a Claude Code plugin. It is not a fallback for people without an API key but a different way of working: Claude in your chat drives the audit using whatever Claude Code is logged in with (a Claude subscription or an API key), with no server or database to run.
+> Chat version: **[cotcha-pocket](https://github.com/yeomyaloo/cotcha-pocket)** runs the same kind of audit from chat as a Claude Code plugin. It is not a fallback for people without an API key but a different way of working: Claude in your chat drives the audit using whatever Claude Code is logged in with (a Claude subscription or an API key), with no server or database to run.
 >
 > ```bash
-> claude plugin marketplace add yeomyaloo/mcp-code-agent
+> claude plugin marketplace add yeomyaloo/cotcha-pocket
 > claude plugin install code-agent@yeomyaloo-code-agent
 > ```
 
-![be-code-agent architecture](docs/images/architecture.svg)
+![cotcha-net architecture](docs/images/architecture.svg)
 
 ---
 
@@ -60,7 +77,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 ### Code graph construction (implemented)
 
 - **Languages**: Java/Spring and Python/FastAPI backends, plus line-based checks on frontend JS/TS/Vue/HTML. The language is detected from file extensions when the code graph is built, and the project's `language` is updated (`java`, `python`, `java,python`).
-- **Python/FastAPI**: parsed with tree-sitter. Routes from `@app.get`/`@router.post` (with `APIRouter(prefix=)` and `include_router(prefix=)`), `Depends(...)` dependencies listed on each entry point (`dependencies` in the API; a route without one is a missing-authentication candidate), and ~200 Python sink APIs in the same categories (`subprocess`, `os.system`, python-nmap → COMMAND, `requests`/`httpx` → SSRF, `open`/`FileResponse` → PATH, built SQL strings passed to `execute`/`sqlalchemy.text` → SQL, `pickle`/`yaml.load` → DESERIALIZATION). See [core-code-agent](https://github.com/yeomyaloo/core-code-agent) for details.
+- **Python/FastAPI**: parsed with tree-sitter. Routes from `@app.get`/`@router.post` (with `APIRouter(prefix=)` and `include_router(prefix=)`), `Depends(...)` dependencies listed on each entry point (`dependencies` in the API; a route without one is a missing-authentication candidate), and ~200 Python sink APIs in the same categories (`subprocess`, `os.system`, python-nmap → COMMAND, `requests`/`httpx` → SSRF, `open`/`FileResponse` → PATH, built SQL strings passed to `execute`/`sqlalchemy.text` → SQL, `pickle`/`yaml.load` → DESERIALIZATION). See [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail) for details.
 
 - **Source-only analysis, no library jars**: types are inferred from import statements and variable/field declarations, falling back to the JavaParser symbol solver. Repositories can be analyzed without building them.
 - **Structure extraction**: builds the file → class → method hierarchy and inheritance links (interface method → implementing method).
@@ -175,7 +192,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 5-2 | LLM Planner (multi-round planning, checks without paths, DEPENDS_ON ordering, cascading failures) | ✅ Done (real API calls to be verified once an API key is registered) |
 | 6 | Finding verification (Verifier, false positive removal) | ✅ Done (real API calls to be verified once an API key is registered) |
 | 7 | Reports (SARIF 2.1.0, HTML), human review API | ✅ Done |
-| 8 | Web UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)) | ✅ Done |
+| 8 | Web UI ([cotcha-jar](https://github.com/yeomyaloo/cotcha-jar)) | ✅ Done |
 | 8-1 | Real-time progress (SSE, falls back to 2-second polling) | ✅ Done |
 | 8-2 | Human approval step: approve each plan (and drop tasks) before Workers run, or reject it | ✅ Done |
 | 9 | One-click Docker Compose setup (PostgreSQL + backend + web UI), checked on GitHub Actions | ✅ Done |
@@ -186,8 +203,8 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 10-4 | More IDOR candidates: id-only repository queries (`@Query`, derived), MyBatis mappers, saving a request body | ✅ Done |
 | 11 | Frontend code: JS/TS/Vue/HTML risky patterns as sinks (XSS, eval, open redirect, token storage, postMessage, hardcoded secrets), npm dependency CVEs | ✅ Done |
 | 12 | Evaluation harness: benchmark app with an answer key (11 vulnerabilities, 10 safe look-alikes), CI check that the code graph covers it, LLM scoring script (recall, precision, trap false positives, run-to-run consistency) | ✅ Done |
-| 13 | Shared engine: the code graph engine moved to the [core-code-agent](https://github.com/yeomyaloo/core-code-agent) library, used by both this server and mcp-code-agent (no behavior change) | ✅ Done |
-| 14 | Python (FastAPI) analysis (core-code-agent 0.2.0): language detection, FastAPI entry points with `Depends`, Python sinks; the project language is set from the detected languages | ✅ Done |
+| 13 | Shared engine: the code graph engine moved to the [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail) library, used by both this server and cotcha-pocket (no behavior change) | ✅ Done |
+| 14 | Python (FastAPI) analysis (cotcha-trail 0.2.0): language detection, FastAPI entry points with `Depends`, Python sinks; the project language is set from the detected languages | ✅ Done |
 
 ---
 
@@ -195,11 +212,11 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 
 ### Quick start with Docker (recommended)
 
-All you need is [Docker](https://docs.docker.com/get-docker/). One command starts PostgreSQL, this backend and the web UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent), built straight from GitHub).
+All you need is [Docker](https://docs.docker.com/get-docker/). One command starts PostgreSQL, this backend and the web UI ([cotcha-jar](https://github.com/yeomyaloo/cotcha-jar), built straight from GitHub).
 
 ```bash
-git clone https://github.com/yeomyaloo/be-code-agent.git
-cd be-code-agent
+git clone https://github.com/yeomyaloo/cotcha-net.git
+cd cotcha-net
 cp .env.example .env          # put your ANTHROPIC_API_KEY in .env
 docker compose up -d --build
 ```
@@ -212,7 +229,7 @@ Open **http://localhost:3000**. Stop with `docker compose down` (add `-v` to als
 | `WEB_PORT` / `API_PORT` | `3000` / `8080` | Ports, bound to `127.0.0.1` (this computer only) |
 | `LOCAL_REPOS_DIR` | `./repos` | Folder mounted read-only at `/repos`. Register a local repository with the server path `/repos/<folder>` |
 | `DB_PASSWORD` | `codeagent` | PostgreSQL password, used only inside the containers |
-| `WEB_SOURCE` | fe-code-agent on GitHub | Web UI source. Set a local path (e.g. `../fe-code-agent`) to use your own changes |
+| `WEB_SOURCE` | cotcha-jar on GitHub | Web UI source. Set a local path (e.g. `../cotcha-jar`) to use your own changes |
 
 Every push that touches the Docker setup is checked by [GitHub Actions](.github/workflows/docker-compose.yml): it runs `docker compose up`, then registers the test fixture through the web UI's proxy and builds its code graph.
 
@@ -424,8 +441,8 @@ The code graph must be built first. `paths` returns 400 if there is not a single
 ```
 
 - **Test database**: tests run with the `test` profile and use a separate `codeagent_test` schema in the same database, so your development data (`public` schema) is never touched. The schema is created by Flyway and wiped at the start of each test context. Point to another database with `TEST_DB_URL`.
-- The code graph engine's own unit tests (`CodeGraphBuilderTest`, `IdorSinkTest`, `OwaspSinkTest`) live in [core-code-agent](https://github.com/yeomyaloo/core-code-agent). This repository keeps `BenchmarkSinkTest` (no DB) as a regression check through the library.
-- The engine comes from GitHub Packages, which needs a token even for public packages: set `gpr.user`/`gpr.key` in `~/.gradle/gradle.properties` (or `GITHUB_ACTOR`/`GITHUB_TOKEN`, scope `read:packages`). To build against a local checkout instead, run with `-PcoreCodeAgentDir=../core-code-agent` (Gradle composite build). The Docker image does this with the tagged source, so it needs no token.
+- The code graph engine's own unit tests (`CodeGraphBuilderTest`, `IdorSinkTest`, `OwaspSinkTest`) live in [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail). This repository keeps `BenchmarkSinkTest` (no DB) as a regression check through the library.
+- The engine comes from GitHub Packages, which needs a token even for public packages: set `gpr.user`/`gpr.key` in `~/.gradle/gradle.properties` (or `GITHUB_ACTOR`/`GITHUB_TOKEN`, scope `read:packages`). To build against a local checkout instead, run with `-PcoreCodeAgentDir=../cotcha-trail` (Gradle composite build). The Docker image does this with the tagged source, so it needs no token.
 - `FileToolsTest` runs without a DB. It checks range reads of the `read_file` and `grep_code` tools, blocking of paths and symlinks outside the repository, and input error handling.
 - `GitUrlPolicyTest` and `GitClonerTest` run without a DB or network. They check that disallowed URLs (http, file://, credentials, internal IPs, etc.) are refused, and test shallow clone, branch selection and the size limit against a remote repository created locally. The symlink test is skipped where the environment has no permission to create links (a regular Windows account).
 - `CodeAgentApplicationTests` starts the Spring context, so PostgreSQL must be running.
@@ -434,8 +451,8 @@ The code graph must be built first. `paths` returns 400 if there is not a single
 - `PlannerFlowTest` checks the LLM planning flow the same way: planning round 1 (path tasks + authorization checks without paths, DEPENDS_ON, rejecting duplicates and invalid nodes) → Worker execution order → round 2 (reading conclusions with get_plan, follow-ups, rejecting going over the limit, finish_planning) → round 3 skipped, and cascading failure when a prerequisite fails.
 - **Benchmark (evaluation harness)**: [`benchmark/`](benchmark/README.md) has a small shop app with 11 real vulnerabilities and 10 safe look-alikes, and an answer key kept outside the app folder. `BenchmarkSinkTest` (no DB, runs in CI) checks that every item becomes a sink reachable from its entry point. To measure the LLM itself (recall, precision, trap false positives and whether repeated runs agree), start the server with an API key and run `python benchmark/run.py --runs 3`; `benchmark/score.py` also scores SARIF exported from the Claude Code plugin.
 - **Adding a tool**: create a `@Component` implementing `agent/tool/AgentTool`, and add its name to the tool list of each role that uses it (`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`). For invalid input, throw `ToolInputException`; it is passed to Claude as an error so it can retry.
-- **Adding a sink rule**: add `rule(type FQN, category, CWE, methods...)` to `RULES` in core-code-agent `rules/SinkRules.java`, release a new version and bump the dependency in `build.gradle`. Write constructors as the method name `<init>`. Put a new category in `CATEGORY_ORDER` (investigation priority) too.
-- **Adding an entry point kind**: extend core-code-agent `java/EntryPointDetector.java`.
+- **Adding a sink rule**: add `rule(type FQN, category, CWE, methods...)` to `RULES` in cotcha-trail `rules/SinkRules.java`, release a new version and bump the dependency in `build.gradle`. Write constructors as the method name `<init>`. Put a new category in `CATEGORY_ORDER` (investigation priority) too.
+- **Adding an entry point kind**: extend cotcha-trail `java/EntryPointDetector.java`.
 
 ---
 
@@ -448,7 +465,7 @@ The code graph must be built first. `paths` returns 400 if there is not a single
 | Language / framework | Java 21, Spring Boot 4.1 (Web MVC, Data JPA, Validation) |
 | Build | Gradle 9.7 |
 | DB | PostgreSQL + Flyway migrations, recursive CTEs for graph traversal |
-| Code parsing | [core-code-agent](https://github.com/yeomyaloo/core-code-agent) (JavaParser 3.26 + symbol solver) |
+| Code parsing | [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail) (JavaParser 3.26 + symbol solver) |
 | LLM | Anthropic Java SDK 2.68 (Worker: Claude Sonnet 5.5, Planner and Verifier: Claude Opus 5.5) |
 | Other | Lombok, virtual threads |
 
@@ -470,7 +487,7 @@ ARTEX's "asset graph + exploration graph" design, adapted to code analysis.
  └──────────────────────────────┘            └──────────────────────────────┘
 ```
 
-| ARTEX | be-code-agent |
+| ARTEX | cotcha-net |
 |---|---|
 | Asset graph: domain → subdomain → IP → service → endpoint | **Code graph**: file → class → method, entry points, sinks, call edges |
 | Exploration graph: goal / intent / fact / finding / hint | **Analysis graph**: GOAL / INTENTION / FACT / FINDING / HINT |
@@ -488,7 +505,7 @@ ARTEX's "asset graph + exploration graph" design, adapted to code analysis.
 ```
 Repository path
   │
-  ▼                        ── core-code-agent: CodeGraphEngine.analyze() ──
+  ▼                        ── cotcha-trail: CodeGraphEngine.analyze() ──
 JavaProject.load()         finds src/main/java roots and parses .java files (skips build, target, etc.)
   │                        pass 1: collect project type names → pass 2: index types, supertypes, methods
   ▼
@@ -548,7 +565,7 @@ job DONE (STOPPED if the budget runs out during verification; continue the remai
 ARTEX's "multi-round Planner + shared task list + parallel Workers" design, carried over to code analysis.
 
 ```
-             [ User / REST API / web UI (fe-code-agent) ]
+             [ User / REST API / web UI (cotcha-jar) ]
                             │
                       ┌─────▼──────┐
                       │  Planner   │ ← shared task list (order managed with DEPENDS_ON)
@@ -574,7 +591,7 @@ Stop conditions: the Planner calls `finish_planning` or creates no new tasks, th
 ## Directory structure
 
 ```
-be-code-agent/
+cotcha-net/
 ├── build.gradle, settings.gradle, gradlew          Gradle build
 ├── Dockerfile, docker-compose.yml, .env.example    One-click Docker Compose setup
 ├── .github/workflows/docker-compose.yml            Checks the Docker setup on GitHub Actions
@@ -586,8 +603,8 @@ be-code-agent/
 │   │   ├── ProjectService.java                      register by Git URL / local path, sync
 │   │   └── source/                                  GitUrlPolicy (URL checks), GitCloner (JGit shallow clone)
 │   ├── codegraph/
-│   │   ├── domain/                                  CodeNode, CodeEdge entities (node/edge kinds come from core-code-agent)
-│   │   ├── ingest/                                  code graph construction (parsing is in core-code-agent)
+│   │   ├── domain/                                  CodeNode, CodeEdge entities (node/edge kinds come from cotcha-trail)
+│   │   ├── ingest/                                  code graph construction (parsing is in cotcha-trail)
 │   │   │   └── CodeGraphIndexer.java                DB storage (updates while keeping node ids)
 │   │   └── query/CodeGraphQuery.java                queries, recursive CTE path search
 │   ├── analysisgraph/
@@ -618,7 +635,7 @@ be-code-agent/
 │       ├── V3__code_node_reindex.sql                code node indexed_at / removed_at
 │       └── V4__project_git_source.sql               project Git URL, branch, commit
 └── src/test/
-    ├── java/.../BenchmarkSinkTest.java              benchmark sink coverage through core-code-agent (no DB)
+    ├── java/.../BenchmarkSinkTest.java              benchmark sink coverage through cotcha-trail (no DB)
     ├── java/.../CodeGraphReindexTest.java           code graph rebuild test (DB required)
     ├── java/.../FileToolsTest.java                  file tool test (no DB)
     ├── java/.../AnalysisFlowTest.java               analysis flow integration test (DB required, no API key)
@@ -661,12 +678,22 @@ be-code-agent/
 
 <a id="한국어"></a>
 
-# be-code-agent (한국어)
+# cotcha-net (한국어)
+
+> **Cotcha(코챠)** = *"Caught ya!"*(잡았다!)를 귀엽게 줄인 말. 외부 입력이 코드에 들어온 곳부터 위험한 곳까지 따라가며 보안 버그를 잡아 유리병에 담는다.
+> *Every bug ends up in the jar.* (잡은 버그는 전부 병 속으로)
+
+| 레포 | 이름 뜻 | 역할 |
+|---|---|---|
+| [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail) | 벌레가 지나간 발자국 | 공용 엔진: 코드를 파싱해 진입점 → 위험 지점 경로(호출 그래프)를 그린다 |
+| [cotcha-net (이 레포)](https://github.com/yeomyaloo/cotcha-net) | 벌레 잡는 잠자리채 | 서버: Planner·Worker·Verifier 에이전트 팀이 코드를 훑고, 잡은 것을 다시 확인한다 (REST API, DB) |
+| [cotcha-pocket](https://github.com/yeomyaloo/cotcha-pocket) | 주머니 속 채집통 | Claude Code 플러그인 / MCP 서버: 채팅에서 바로 분석한다 |
+| [cotcha-jar](https://github.com/yeomyaloo/cotcha-jar) | 잡은 벌레를 모아 두는 유리병 | 웹 화면: 경로·발견·승인을 한눈에 본다 |
 
 **소스코드를 탐색해 보안 취약점을 찾는 LLM 멀티 에이전트 코드 보안 분석 시스템**
 
-be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그래프**를 만들고, 그 위에서 LLM 에이전트가 "사용자 입력이 위험한 API까지 도달하는가"를 추적해 취약점을 찾고 검증하는 것을 목표로 한다.
-아키텍처는 [ARTEX](https://github.com/Autumn-27/ARTEX)의 이중 그래프 + Planner/Worker 구조를 참고했고, 코드는 모두 새로 작성했다. ARTEX가 **살아있는 서버**를 탐색한다면, be-code-agent는 **소스코드**를 탐색한다.
+cotcha-net는 저장소 소스코드를 정적으로 파싱해 **코드 그래프**를 만들고, 그 위에서 LLM 에이전트가 "사용자 입력이 위험한 API까지 도달하는가"를 추적해 취약점을 찾고 검증하는 것을 목표로 한다.
+아키텍처는 [ARTEX](https://github.com/Autumn-27/ARTEX)의 이중 그래프 + Planner/Worker 구조를 참고했고, 코드는 모두 새로 작성했다. ARTEX가 **살아있는 서버**를 탐색한다면, cotcha-net는 **소스코드**를 탐색한다.
 
 > 현재 단계: **Planner → Worker → Verifier 에이전트 구조까지 구현됨.**
 > - **Planner(Opus)**: 코드 그래프를 보고 조사할 일을 정한다. 경로 조사뿐 아니라 권한 검사 누락이나 보안 설정 점검도 할 일로 만든다.
@@ -676,16 +703,16 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 >
 > 자세한 내용은 [진행 상황](#진행-상황)을 참고.
 
-> 웹 화면: **[fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)** (React). 저장소 등록, 코드 그래프 조회, 분석 시작, 진행 상황·에이전트 기록 타임라인, 발견 검토, 보고서를 브라우저에서 할 수 있다.
+> 웹 화면: **[cotcha-jar](https://github.com/yeomyaloo/cotcha-jar)** (React). 저장소 등록, 코드 그래프 조회, 분석 시작, 진행 상황·에이전트 기록 타임라인, 발견 검토, 보고서를 브라우저에서 할 수 있다.
 
-> 채팅 버전: **[mcp-code-agent](https://github.com/yeomyaloo/mcp-code-agent)**. 같은 분석을 Claude Code 플러그인으로 채팅에서 하는 버전이다. API 키가 없을 때만 쓰는 대안이 아니라 쓰는 방식이 다른 선택지다. Claude Code에 로그인한 방식(Claude 구독이든 API 키든)으로 채팅의 Claude가 분석을 이끌고, 띄울 서버나 DB가 없다.
+> 채팅 버전: **[cotcha-pocket](https://github.com/yeomyaloo/cotcha-pocket)**. 같은 분석을 Claude Code 플러그인으로 채팅에서 하는 버전이다. API 키가 없을 때만 쓰는 대안이 아니라 쓰는 방식이 다른 선택지다. Claude Code에 로그인한 방식(Claude 구독이든 API 키든)으로 채팅의 Claude가 분석을 이끌고, 띄울 서버나 DB가 없다.
 >
 > ```bash
-> claude plugin marketplace add yeomyaloo/mcp-code-agent
+> claude plugin marketplace add yeomyaloo/cotcha-pocket
 > claude plugin install code-agent@yeomyaloo-code-agent
 > ```
 
-![be-code-agent 아키텍처](docs/images/architecture.svg)
+![cotcha-net 아키텍처](docs/images/architecture.svg)
 
 ---
 
@@ -719,7 +746,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 ### 코드 그래프 생성 (구현됨)
 
 - **언어**: Java/Spring 과 Python/FastAPI 백엔드, 프론트엔드 JS/TS/Vue/HTML(줄 단위 점검). 코드 그래프를 만들 때 파일 확장자로 언어를 판별하고 프로젝트의 `language` 를 바꾼다(`java`, `python`, `java,python`).
-- **Python/FastAPI**: tree-sitter 로 파싱한다. `@app.get`·`@router.post` 라우트(`APIRouter(prefix=)`, `include_router(prefix=)` 경로 포함), 진입점마다 `Depends(...)` 의존 함수(API 의 `dependencies`, 없으면 인증 누락 후보), 같은 분류의 파이썬 위험 API 약 200개(`subprocess`, `os.system`, python-nmap → COMMAND, `requests`·`httpx` → SSRF, `open`·`FileResponse` → PATH, 조립한 SQL 문자열을 `execute`·`sqlalchemy.text` 에 넘김 → SQL, `pickle`·`yaml.load` → DESERIALIZATION). 자세한 내용은 [core-code-agent](https://github.com/yeomyaloo/core-code-agent).
+- **Python/FastAPI**: tree-sitter 로 파싱한다. `@app.get`·`@router.post` 라우트(`APIRouter(prefix=)`, `include_router(prefix=)` 경로 포함), 진입점마다 `Depends(...)` 의존 함수(API 의 `dependencies`, 없으면 인증 누락 후보), 같은 분류의 파이썬 위험 API 약 200개(`subprocess`, `os.system`, python-nmap → COMMAND, `requests`·`httpx` → SSRF, `open`·`FileResponse` → PATH, 조립한 SQL 문자열을 `execute`·`sqlalchemy.text` 에 넘김 → SQL, `pickle`·`yaml.load` → DESERIALIZATION). 자세한 내용은 [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail).
 
 - **라이브러리 jar 없이 소스만으로 분석**: import 문과 변수·필드 선언으로 타입을 알아내고, 안 되면 JavaParser symbol solver에 맡긴다. 빌드하지 않은 저장소도 바로 분석할 수 있다.
 - **구조 추출**: 파일 → 클래스 → 메서드 계층과 상속 관계(인터페이스 메서드 → 구현 메서드)를 만든다.
@@ -834,7 +861,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 5-2 | LLM Planner (여러 회차 계획, 경로 없는 점검 계획, DEPENDS_ON 순서, 실패 연쇄 처리) | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
 | 6 | 발견 검증(Verifier, 오탐 제거) | ✅ 완료 (실제 API 호출 검증은 API 키 등록 후) |
 | 7 | 보고서 (SARIF 2.1.0, HTML), 사람 검토 API | ✅ 완료 |
-| 8 | 웹 UI ([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent)) | ✅ 완료 |
+| 8 | 웹 UI ([cotcha-jar](https://github.com/yeomyaloo/cotcha-jar)) | ✅ 완료 |
 | 8-1 | 실시간 진행 상황 (SSE, 끊기면 2초 폴링) | ✅ 완료 |
 | 8-2 | 사람 승인 단계: 계획이 나올 때마다 Worker 실행 전에 승인(할 일 빼기 가능) 또는 거절 | ✅ 완료 |
 | 9 | Docker Compose 원클릭 실행 (PostgreSQL + 백엔드 + 웹 화면), GitHub Actions로 확인 | ✅ 완료 |
@@ -845,8 +872,8 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 10-4 | IDOR 후보 확대: id 하나로 조회하는 저장소 쿼리(`@Query`, 파생 쿼리), MyBatis 매퍼, 요청 본문 그대로 저장 | ✅ 완료 |
 | 11 | 프론트엔드 코드: JS/TS/Vue/HTML의 위험한 패턴을 위험 지점으로 (XSS, eval, 오픈 리다이렉트, 토큰 저장, postMessage, 하드코딩된 비밀값), npm 라이브러리 CVE | ✅ 완료 |
 | 12 | 평가 하네스: 정답이 있는 벤치마크 앱(취약점 11개, 안전한 함정 10개), 코드 그래프가 다 잡는지 CI 검사, LLM 채점 스크립트(재현율, 정밀도, 함정 오탐, 실행 간 일관성) | ✅ 완료 |
-| 13 | 공용 엔진: 코드 그래프 엔진을 [core-code-agent](https://github.com/yeomyaloo/core-code-agent) 라이브러리로 옮겨 이 서버와 mcp-code-agent 가 같이 씀 (동작 변화 없음) | ✅ 완료 |
-| 14 | Python(FastAPI) 분석 (core-code-agent 0.2.0): 언어 자동 판별, `Depends` 를 포함한 FastAPI 진입점, 파이썬 위험 지점. 프로젝트 언어를 판별 결과로 기록 | ✅ 완료 |
+| 13 | 공용 엔진: 코드 그래프 엔진을 [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail) 라이브러리로 옮겨 이 서버와 cotcha-pocket 가 같이 씀 (동작 변화 없음) | ✅ 완료 |
+| 14 | Python(FastAPI) 분석 (cotcha-trail 0.2.0): 언어 자동 판별, `Depends` 를 포함한 FastAPI 진입점, 파이썬 위험 지점. 프로젝트 언어를 판별 결과로 기록 | ✅ 완료 |
 
 ---
 
@@ -854,11 +881,11 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 
 ### Docker로 한 번에 실행 (추천)
 
-[Docker](https://docs.docker.com/get-docker/)만 있으면 된다. 명령 한 줄로 PostgreSQL, 이 백엔드, 웹 화면([fe-code-agent](https://github.com/yeomyaloo/fe-code-agent), GitHub에서 바로 받아 빌드)이 함께 뜬다.
+[Docker](https://docs.docker.com/get-docker/)만 있으면 된다. 명령 한 줄로 PostgreSQL, 이 백엔드, 웹 화면([cotcha-jar](https://github.com/yeomyaloo/cotcha-jar), GitHub에서 바로 받아 빌드)이 함께 뜬다.
 
 ```bash
-git clone https://github.com/yeomyaloo/be-code-agent.git
-cd be-code-agent
+git clone https://github.com/yeomyaloo/cotcha-net.git
+cd cotcha-net
 cp .env.example .env          # .env 에 ANTHROPIC_API_KEY 넣기
 docker compose up -d --build
 ```
@@ -871,7 +898,7 @@ docker compose up -d --build
 | `WEB_PORT` / `API_PORT` | `3000` / `8080` | 포트. `127.0.0.1`(이 컴퓨터)에서만 열린다 |
 | `LOCAL_REPOS_DIR` | `./repos` | `/repos`에 읽기 전용으로 연결되는 폴더. 로컬 저장소는 서버 폴더 경로 `/repos/<폴더>`로 등록한다 |
 | `DB_PASSWORD` | `codeagent` | PostgreSQL 비밀번호. 컨테이너 안에서만 쓰인다 |
-| `WEB_SOURCE` | GitHub의 fe-code-agent | 웹 화면 소스. 직접 고친 프론트를 쓰려면 로컬 경로(예: `../fe-code-agent`)로 바꾼다 |
+| `WEB_SOURCE` | GitHub의 cotcha-jar | 웹 화면 소스. 직접 고친 프론트를 쓰려면 로컬 경로(예: `../cotcha-jar`)로 바꾼다 |
 
 Docker 설정을 바꾸는 푸시마다 [GitHub Actions](.github/workflows/docker-compose.yml)가 확인한다: `docker compose up` 후 웹 화면의 프록시를 거쳐 테스트용 앱을 등록하고 코드 그래프를 만든다.
 
@@ -1083,8 +1110,8 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 ```
 
 - **테스트 DB**: 테스트는 `test` 프로필로 돌고, 같은 DB 안의 `codeagent_test` 스키마를 따로 써서 개발 데이터(`public` 스키마)를 건드리지 않는다. 스키마는 Flyway가 만들고, 테스트용 스프링 컨텍스트가 뜰 때마다 비운다. 다른 DB를 쓰려면 `TEST_DB_URL`.
-- 코드 그래프 엔진 자체의 단위 테스트(`CodeGraphBuilderTest`, `IdorSinkTest`, `OwaspSinkTest`)는 [core-code-agent](https://github.com/yeomyaloo/core-code-agent)에 있다. 이 저장소는 라이브러리를 거쳐 도는 `BenchmarkSinkTest`(DB 불필요)로 회귀를 확인한다.
-- 엔진은 GitHub Packages 에서 받는데, 공개 패키지도 읽을 때 토큰이 필요하다. `~/.gradle/gradle.properties` 에 `gpr.user`/`gpr.key`(또는 `GITHUB_ACTOR`/`GITHUB_TOKEN`, 권한 `read:packages`)를 둔다. 로컬에 받은 소스로 빌드하려면 `-PcoreCodeAgentDir=../core-code-agent`(Gradle composite build). Docker 이미지는 태그의 소스를 이렇게 묶어서 토큰이 필요 없다.
+- 코드 그래프 엔진 자체의 단위 테스트(`CodeGraphBuilderTest`, `IdorSinkTest`, `OwaspSinkTest`)는 [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail)에 있다. 이 저장소는 라이브러리를 거쳐 도는 `BenchmarkSinkTest`(DB 불필요)로 회귀를 확인한다.
+- 엔진은 GitHub Packages 에서 받는데, 공개 패키지도 읽을 때 토큰이 필요하다. `~/.gradle/gradle.properties` 에 `gpr.user`/`gpr.key`(또는 `GITHUB_ACTOR`/`GITHUB_TOKEN`, 권한 `read:packages`)를 둔다. 로컬에 받은 소스로 빌드하려면 `-PcoreCodeAgentDir=../cotcha-trail`(Gradle composite build). Docker 이미지는 태그의 소스를 이렇게 묶어서 토큰이 필요 없다.
 - `FileToolsTest`는 DB 없이 돈다. `read_file`·`grep_code` 도구의 범위 읽기, 저장소 밖 경로·심볼릭 링크 차단, 입력 오류 처리를 검증한다.
 - `GitUrlPolicyTest`, `GitClonerTest`는 DB·네트워크 없이 돈다. 허용하지 않는 주소(http, file://, 계정 정보, 내부망 IP 등) 거부와, 로컬에 만든 원격 저장소로 얕은 클론·브랜치 지정·크기 상한을 검증한다. 심볼릭 링크 테스트는 링크를 만들 권한이 없는 환경(Windows 일반 계정)에서는 건너뛴다.
 - `CodeAgentApplicationTests`는 스프링 컨텍스트를 띄우므로 PostgreSQL이 떠 있어야 한다.
@@ -1093,8 +1120,8 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 - `PlannerFlowTest`는 같은 방식으로 LLM 계획 흐름을 검증한다: 계획 1회차(경로 할 일 + 경로 없는 권한 점검, DEPENDS_ON, 중복·잘못된 노드 거절) → Worker 실행 순서 → 2회차(get_plan 으로 결론 확인, 보완, 상한 초과 거절, finish_planning) → 3회차 생략, 선행 할 일 실패 시 연쇄 실패 처리.
 - **벤치마크 (평가 하네스)**: [`benchmark/`](benchmark/README.md)에 진짜 취약점 11개와 안전한 함정 10개를 섞은 작은 쇼핑몰과, 앱 폴더 밖에 둔 정답 파일이 있다. `BenchmarkSinkTest`(DB 없이, CI 에서 돈다)는 모든 항목이 위험 지점이 되고 진입점에서 이어지는지 확인한다. LLM 자체의 성능(재현율, 정밀도, 함정 오탐, 여러 번 돌려도 같은 결론인지)은 API 키를 넣고 서버를 띄운 뒤 `python benchmark/run.py --runs 3` 으로 잰다. Claude Code 플러그인에서 받은 SARIF 도 `benchmark/score.py` 로 채점할 수 있다.
 - **도구 추가**: `agent/tool/AgentTool`을 구현한 `@Component`를 만들고, 쓸 역할의 도구 목록(`AnalysisService.WORKER_TOOLS` / `PLANNER_TOOLS`, `VerificationService.VERIFIER_TOOLS`)에 이름을 넣는다. 잘못된 입력은 `ToolInputException`을 던지면 Claude에게 오류로 전달되어 다시 시도하게 된다.
-- **위험 지점 규칙 추가**: core-code-agent 의 `rules/SinkRules.java` `RULES`에 `rule(타입 FQN, 분류, CWE, 메서드...)`를 추가하고, 새 버전을 배포한 뒤 `build.gradle` 의존 버전을 올린다. 생성자는 메서드 이름 `<init>`으로 적는다. 새 분류면 `CATEGORY_ORDER`(조사 우선순위)에도 넣는다.
-- **진입점 종류 추가**: core-code-agent 의 `java/EntryPointDetector.java`를 확장한다.
+- **위험 지점 규칙 추가**: cotcha-trail 의 `rules/SinkRules.java` `RULES`에 `rule(타입 FQN, 분류, CWE, 메서드...)`를 추가하고, 새 버전을 배포한 뒤 `build.gradle` 의존 버전을 올린다. 생성자는 메서드 이름 `<init>`으로 적는다. 새 분류면 `CATEGORY_ORDER`(조사 우선순위)에도 넣는다.
+- **진입점 종류 추가**: cotcha-trail 의 `java/EntryPointDetector.java`를 확장한다.
 
 ---
 
@@ -1107,7 +1134,7 @@ curl -X POST localhost:8080/api/projects/1/analyses -H "Content-Type: applicatio
 | 언어 / 프레임워크 | Java 21, Spring Boot 4.1 (Web MVC, Data JPA, Validation) |
 | 빌드 | Gradle 9.7 |
 | DB | PostgreSQL + Flyway 마이그레이션, 그래프 탐색은 재귀 CTE |
-| 코드 파싱 | [core-code-agent](https://github.com/yeomyaloo/core-code-agent) (JavaParser 3.26 + symbol solver) |
+| 코드 파싱 | [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail) (JavaParser 3.26 + symbol solver) |
 | LLM | Anthropic Java SDK 2.68 (Worker: Claude Sonnet 5.5, Planner·Verifier: Claude Opus 5.5) |
 | 기타 | Lombok, 가상 스레드 |
 
@@ -1129,7 +1156,7 @@ ARTEX의 "자산 그래프 + 탐색 그래프" 구조를 코드 분석에 맞게
  └──────────────────────────────┘            └──────────────────────────────┘
 ```
 
-| ARTEX | be-code-agent |
+| ARTEX | cotcha-net |
 |---|---|
 | 자산 그래프: 도메인 → 서브도메인 → IP → 서비스 → 엔드포인트 | **코드 그래프**: 파일 → 클래스 → 메서드, 진입점, 위험 지점, 호출 관계 |
 | 탐색 그래프: goal / intent / fact / finding / hint | **분석 그래프**: GOAL / INTENTION / FACT / FINDING / HINT |
@@ -1147,7 +1174,7 @@ ARTEX의 "자산 그래프 + 탐색 그래프" 구조를 코드 분석에 맞게
 ```
 저장소 경로
   │
-  ▼                        ── core-code-agent: CodeGraphEngine.analyze() ──
+  ▼                        ── cotcha-trail: CodeGraphEngine.analyze() ──
 JavaProject.load()         src/main/java 루트를 찾아 .java 파일 파싱 (build, target 등 제외)
   │                        1단계: 프로젝트 타입 이름 수집 → 2단계: 타입·상위 타입·메서드 색인
   ▼
@@ -1207,7 +1234,7 @@ VerificationService         검증 대기(OPEN) FINDING마다 Verifier 에이전
 ARTEX의 "Planner 여러 회차 + 공유 할 일 목록 + Worker 병렬 실행" 구조를 코드 분석에 맞게 옮겼다.
 
 ```
-             [ 사용자 / REST API / 웹 UI (fe-code-agent) ]
+             [ 사용자 / REST API / 웹 UI (cotcha-jar) ]
                             │
                       ┌─────▼──────┐
                       │  Planner   │ ← 공유 할 일 목록 (DEPENDS_ON으로 순서 관리)
@@ -1233,7 +1260,7 @@ ARTEX의 "Planner 여러 회차 + 공유 할 일 목록 + Worker 병렬 실행" 
 ## 디렉터리 구조
 
 ```
-be-code-agent/
+cotcha-net/
 ├── build.gradle, settings.gradle, gradlew          Gradle 빌드
 ├── Dockerfile, docker-compose.yml, .env.example    Docker Compose 원클릭 실행
 ├── .github/workflows/docker-compose.yml            GitHub Actions 로 Docker 실행 확인
@@ -1245,8 +1272,8 @@ be-code-agent/
 │   │   ├── ProjectService.java                      Git 주소 / 로컬 경로 등록, 동기화
 │   │   └── source/                                  GitUrlPolicy(주소 검사), GitCloner(JGit 얕은 클론)
 │   ├── codegraph/
-│   │   ├── domain/                                  CodeNode, CodeEdge 엔티티 (노드·연결 종류는 core-code-agent)
-│   │   ├── ingest/                                  코드 그래프 생성 (파싱은 core-code-agent)
+│   │   ├── domain/                                  CodeNode, CodeEdge 엔티티 (노드·연결 종류는 cotcha-trail)
+│   │   ├── ingest/                                  코드 그래프 생성 (파싱은 cotcha-trail)
 │   │   │   └── CodeGraphIndexer.java                DB 저장 (노드 id 유지하며 갱신)
 │   │   └── query/CodeGraphQuery.java                조회, 재귀 CTE 경로 탐색
 │   ├── analysisgraph/
@@ -1277,7 +1304,7 @@ be-code-agent/
 │       ├── V3__code_node_reindex.sql                코드 노드 indexed_at / removed_at
 │       └── V4__project_git_source.sql               프로젝트 Git 주소·브랜치·커밋
 └── src/test/
-    ├── java/.../BenchmarkSinkTest.java              core-code-agent 로 만든 그래프의 벤치마크 위험 지점 검사 (DB 불필요)
+    ├── java/.../BenchmarkSinkTest.java              cotcha-trail 로 만든 그래프의 벤치마크 위험 지점 검사 (DB 불필요)
     ├── java/.../CodeGraphReindexTest.java           코드 그래프 재생성 테스트 (DB 필요)
     ├── java/.../FileToolsTest.java                  파일 도구 테스트 (DB 불필요)
     ├── java/.../AnalysisFlowTest.java               분석 흐름 통합 테스트 (DB 필요, API 키 불필요)

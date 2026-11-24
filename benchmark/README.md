@@ -7,7 +7,7 @@ An evaluation harness that measures how well the agent finds vulnerabilities, an
 | `shop-app/` | A small Spring + React shop with **11 real vulnerabilities** and **10 safe look-alikes** (traps): each vulnerable spot has a safe twin of the same category (bind variable vs. concatenation, allowlisted sort column, normalized path check, hardened XML parser, owner check, fixed redirect, sanitized HTML, …). There are no hint comments in the code. |
 | `shop-app.expected.json` | The answer key: file, line range, sink line, accepted CWEs and entry point of each item. It lives **outside** `shop-app/` so the agent cannot read it while analyzing. |
 | `score.py` | Scores one or more SARIF reports against the answer key: recall, precision, trap false positives, wrong CWE, duplicates and, for several runs, consistency. |
-| `run.py` | Drives a running be-code-agent: registers `shop-app`, builds the code graph, runs the analysis N times, saves each SARIF and scores them. |
+| `run.py` | Drives a running cotcha-net: registers `shop-app`, builds the code graph, runs the analysis N times, saves each SARIF and scores them. |
 | `test_score.py` | Tests for the scoring rules (no LLM). |
 
 ## What runs in CI (no API key)
@@ -25,7 +25,7 @@ python benchmark/run.py --runs 3 --planner paths   # path planner
 
 Results go to `benchmark/results/<time>/` (git-ignored): `run-N.sarif`, `run-N.job.json` (tokens), `score.json`.
 
-To score the Claude Code plugin (mcp-code-agent), run the `security-audit` skill on `benchmark/shop-app`, export the report with `export_report` (`format: sarif`), and score it:
+To score the Claude Code plugin (cotcha-pocket), run the `security-audit` skill on `benchmark/shop-app`, export the report with `export_report` (`format: sarif`), and score it:
 
 ```bash
 python benchmark/score.py benchmark/shop-app.expected.json report-1.sarif report-2.sarif
@@ -50,7 +50,7 @@ python benchmark/score.py benchmark/shop-app.expected.json report-1.sarif report
 | `shop-app/` | 작은 Spring + React 쇼핑몰. **진짜 취약점 11개**와 비슷하게 생겼지만 **안전한 코드 10개**(함정)를 섞었다. 취약한 곳마다 같은 분류의 안전한 짝이 있다(바인드 변수와 문자열 이어 붙이기, 허용 목록으로 거른 정렬 열, normalize 후 경로 확인, 막아 둔 XML 파서, 주인 확인, 고정된 이동 주소, 거른 HTML 등). 코드에 힌트 주석은 없다. |
 | `shop-app.expected.json` | 정답 파일. 항목마다 파일, 줄 범위, 위험 지점 줄, 인정하는 CWE, 진입점을 적었다. 에이전트가 분석 중에 읽지 못하도록 `shop-app/` **밖**에 둔다. |
 | `score.py` | SARIF 보고서를 정답과 비교해 채점한다. 재현율, 정밀도, 함정 오탐, 분류 틀림, 중복, 그리고 여러 번 돌렸으면 일관성. |
-| `run.py` | 실행 중인 be-code-agent 로 `shop-app` 을 등록하고 코드 그래프를 만든 뒤 N번 분석해 SARIF 를 모으고 채점한다. |
+| `run.py` | 실행 중인 cotcha-net 로 `shop-app` 을 등록하고 코드 그래프를 만든 뒤 N번 분석해 SARIF 를 모으고 채점한다. |
 | `test_score.py` | 채점 규칙 테스트 (LLM 없음). |
 
 ## CI 에서 도는 것 (API 키 필요 없음)
@@ -68,7 +68,7 @@ python benchmark/run.py --runs 3 --planner paths   # 경로 계획
 
 결과는 `benchmark/results/<시각>/` 에 남는다(git 제외): `run-N.sarif`, `run-N.job.json`(토큰), `score.json`.
 
-Claude Code 플러그인(mcp-code-agent)을 채점하려면 `benchmark/shop-app` 에 `security-audit` 스킬을 돌리고 `export_report`(`format: sarif`)로 보고서를 받아 채점한다.
+Claude Code 플러그인(cotcha-pocket)을 채점하려면 `benchmark/shop-app` 에 `security-audit` 스킬을 돌리고 `export_report`(`format: sarif`)로 보고서를 받아 채점한다.
 
 ```bash
 python benchmark/score.py benchmark/shop-app.expected.json report-1.sarif report-2.sarif

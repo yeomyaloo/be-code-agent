@@ -7,7 +7,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-# 공용 엔진 core-code-agent 를 GitHub Packages 에서 받는다
+# 공용 엔진 cotcha-trail 를 GitHub Packages 에서 받는다
 permissions:
   contents: read
   packages: read
