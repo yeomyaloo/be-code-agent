@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 public final class WorkerPrompts {
 
     public static final String SYSTEM = """
-            당신은 Java/Spring 백엔드 소스코드를 감사하는 보안 분석가입니다.
+            당신은 Java/Spring·Python(FastAPI) 백엔드 소스코드를 감사하는 보안 분석가입니다.
             맡은 할 일 하나를 조사해서, 외부 사용자가 실제로 공격할 수 있는지 판단합니다.
             할 일은 진입점 → 위험 지점 호출 경로 하나이거나, 계획 담당이 정한 조사 지시(권한 검사 누락, 보안 설정 등)입니다.
 
@@ -24,6 +24,9 @@ public final class WorkerPrompts {
             - 코드 그래프는 정적 분석 결과라 틀릴 수 있습니다. 호출 관계가 의심스러우면 get_callers/get_callees와 grep_code로 확인합니다.
             - 입력 검증, 이스케이프, 파라미터 바인딩(PreparedStatement의 ?, JPA 파라미터), 허용 목록, 권한 검사처럼 공격을 막는 장치가 있는지 반드시 확인합니다.
               Spring Security 설정, @Valid 같은 Bean Validation, 필터·인터셉터도 확인 대상입니다.
+              Python 이면 Pydantic 모델·검증기, execute(sql, params)·SQLAlchemy 바인드 파라미터, shell=False 인자 리스트·shlex.quote,
+              os.path.realpath 로 기준 경로 확인, 인증 의존성(Depends(get_current_user) 등)과 미들웨어가 막는 장치입니다.
+              python-nmap·create_subprocess_exec 처럼 셸 없이 넘겨도 값이 '-' 로 시작하면 옵션 주입(CWE-88)이 될 수 있습니다.
             - 입력이 상수나 서버 내부 값뿐이라면 공격 불가능으로 판단합니다.
             - IDOR(CWE-639) 위험 지점(저장소의 findById·deleteById 등)이면, 경로로 받은 id 의 데이터가 요청한 사용자의 것인지 비교하는 코드가 있는지 봅니다.
               세션·토큰의 사용자 id 와 엔티티 소유자 비교, 주인 조건 쿼리(findByIdAndUser), @PreAuthorize·PermissionEvaluator 가 막는 장치입니다.
@@ -118,12 +121,19 @@ public final class WorkerPrompts {
         return body + "\n참고할 경로 정보:\n" + pathInfo.substring(pathInfo.indexOf('\n') + 1).strip() + "\n";
     }
 
-    /** com.example.UserServiceImpl#search(String) → UserServiceImpl#search(String) */
+    /**
+     * com.example.UserServiceImpl#search(String) → UserServiceImpl#search(String).
+     * '#' 이 없는 Python 이름은 마지막 두 부분 (app.routers.scan.run_nmap → scan.run_nmap)
+     */
     public static String shortName(String qualifiedName) {
         if (qualifiedName == null) {
             return "";
         }
         int hash = qualifiedName.indexOf('#');
+        if (hash < 0) {
+            String[] parts = qualifiedName.split("\\.");
+            return parts.length <= 2 ? qualifiedName : parts[parts.length - 2] + "." + parts[parts.length - 1];
+        }
         String owner = hash < 0 ? qualifiedName : qualifiedName.substring(0, hash);
         String simple = owner.substring(owner.lastIndexOf('.') + 1);
         return hash < 0 ? simple : simple + qualifiedName.substring(hash);

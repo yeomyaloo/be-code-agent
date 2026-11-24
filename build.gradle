@@ -17,13 +17,18 @@ repositories {
 	mavenCentral()
 	// 공용 코드 그래프 엔진. 공개 패키지여도 GitHub Packages 는 읽을 때 토큰이 필요하다
 	// (gpr.user/gpr.key 또는 GITHUB_ACTOR/GITHUB_TOKEN, 권한 read:packages)
-	maven {
-		url = uri('https://maven.pkg.github.com/yeomyaloo/core-code-agent')
-		credentials {
-			username = providers.gradleProperty('gpr.user').orElse(providers.environmentVariable('GITHUB_ACTOR')).orNull
-			password = providers.gradleProperty('gpr.key').orElse(providers.environmentVariable('GITHUB_TOKEN')).orNull
+	// com.codeagent 는 이 저장소에서만 찾는다 (Maven Central 에 먼저 묻지 않게)
+	exclusiveContent {
+		forRepository {
+			maven {
+				url = uri('https://maven.pkg.github.com/yeomyaloo/core-code-agent')
+				credentials {
+					username = providers.gradleProperty('gpr.user').orElse(providers.environmentVariable('GITHUB_ACTOR')).orNull
+					password = providers.gradleProperty('gpr.key').orElse(providers.environmentVariable('GITHUB_TOKEN')).orNull
+				}
+			}
 		}
-		content {
+		filter {
 			includeGroup 'com.codeagent'
 		}
 	}
@@ -35,7 +40,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.flywaydb:flyway-database-postgresql'
-	implementation 'com.codeagent:core-code-agent:0.1.0'
+	implementation 'com.codeagent:core-code-agent:0.2.0'
 	implementation 'com.anthropic:anthropic-java:2.68.0'
 	implementation 'org.eclipse.jgit:org.eclipse.jgit:7.8.0.202609011348-r'
 	compileOnly 'org.projectlombok:lombok'

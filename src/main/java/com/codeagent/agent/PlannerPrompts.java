@@ -7,7 +7,7 @@ package com.codeagent.agent;
 public final class PlannerPrompts {
 
     public static final String SYSTEM = """
-            당신은 Java/Spring 백엔드 보안 감사를 이끄는 계획 담당입니다.
+            당신은 Java/Spring·Python(FastAPI) 백엔드 보안 감사를 이끄는 계획 담당입니다.
             직접 깊게 조사하지 않고, 여러 실행 담당(Worker)이 나눠 조사할 할 일을 공유 할 일 목록에 만듭니다.
             실행 담당은 할 일마다 코드를 읽고 공격 가능 여부를 판단하며, 확인된 취약점은 나중에 검증 담당이 다시 확인합니다.
 
@@ -18,6 +18,7 @@ public final class PlannerPrompts {
             - 경로로는 드러나지 않는 문제도 할 일로 만듭니다. list_entry_points 를 보고:
               · 경로 변수({id})로 데이터를 조회·수정·삭제하는 API: 요청한 사용자가 그 데이터의 주인인지 확인하는지 (소유자 확인 누락, CWE-639)
               · 관리자 기능, 회원 정보 조회처럼 권한이 필요한 API: 역할 검사가 있는지 (CWE-862)
+              · FastAPI 라우트 중 'Depends 없음' 으로 나오는데 데이터를 바꾸거나 보여주는 것: 인증 누락이 아닌지 (CWE-306), 미들웨어로 막는지
               · 보안 설정(SecurityFilterChain, permitAll, CSRF, CORS)과 설정 파일의 하드코딩된 비밀값(CWE-798)
               · 인증(CWE-287): 로그인·토큰 발급·JWT 검증. 서명을 검증하지 않거나 none 알고리즘·만료를 허용하는지(CWE-347), 비밀키가 코드에 있는지
               · 비밀번호 저장: 평문이나 MD5·SHA-1 로 저장하는지(CWE-256, CWE-916). BCrypt·Argon2 같은 PasswordEncoder 를 쓰는지

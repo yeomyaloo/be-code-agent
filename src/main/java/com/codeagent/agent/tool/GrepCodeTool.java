@@ -1,5 +1,7 @@
 package com.codeagent.agent.tool;
 
+import com.codeagent.codegraph.query.CodeGraphQuery;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -21,8 +23,27 @@ import java.util.stream.Stream;
 @Component
 public class GrepCodeTool implements AgentTool {
 
+    /** 저장소 언어로 기본 검색 대상을 정한다. 없으면(단위 테스트) **.java */
+    private final CodeGraphQuery codeGraphQuery;
+
+    @Autowired
+    public GrepCodeTool(CodeGraphQuery codeGraphQuery) {
+        this.codeGraphQuery = codeGraphQuery;
+    }
+
+    public GrepCodeTool() {
+        this(null);
+    }
+
     static final int MAX_MATCHES = 80;
     private static final int MAX_LINE_LENGTH = 200;
+
+    /** 저장소에서 찾은 백엔드 언어의 소스 */
+    static String defaultGlob(List<String> languages) {
+        boolean python = languages.contains("python");
+        boolean java = languages.contains("java") || !python;
+        return java && python ? "**.{java,py}" : python ? "**.py" : "**.java";
+    }
 
     @Override
     public String name() {
@@ -31,15 +52,15 @@ public class GrepCodeTool implements AgentTool {
 
     @Override
     public String description() {
-        return "저장소에서 정규식(Java 문법)과 일치하는 줄을 찾는다. 결과는 '경로:줄: 내용' 형식이며 최대 "
-                + MAX_MATCHES + "개까지 돌려준다. 기본 대상은 .java 파일이고 file_glob으로 바꿀 수 있다.";
+        return "저장소에서 정규식(Java 정규식 문법)과 일치하는 줄을 찾는다. 결과는 '경로:줄: 내용' 형식이며 최대 "
+                + MAX_MATCHES + "개까지 돌려준다. 기본 대상은 저장소 언어의 소스(.java, .py)이고 file_glob으로 바꿀 수 있다.";
     }
 
     @Override
     public Map<String, Map<String, Object>> properties() {
         return Map.of(
-                "pattern", Map.of("type", "string", "description", "Java 정규식 (예: createNativeQuery\\(|@RequestParam)"),
-                "file_glob", Map.of("type", "string", "description", "대상 파일 glob, 저장소 루트 기준 (기본 **.java, 예: **.xml, src/main/resources/**)"));
+                "pattern", Map.of("type", "string", "description", "정규식 (예: createNativeQuery\\(|@RequestParam, shell=True|Depends\\()"),
+                "file_glob", Map.of("type", "string", "description", "대상 파일 glob, 저장소 루트 기준 (기본: 저장소 언어의 **.java / **.py, 예: **.xml, src/main/resources/**)"));
     }
 
     @Override
@@ -55,7 +76,8 @@ public class GrepCodeTool implements AgentTool {
         } catch (PatternSyntaxException e) {
             throw new ToolInputException("정규식 오류: " + e.getDescription());
         }
-        PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + input.optionalString("file_glob").orElse("**.java"));
+        PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + input.optionalString("file_glob")
+                .orElseGet(() -> defaultGlob(codeGraphQuery == null ? List.of() : codeGraphQuery.languages(context.projectId()))));
         Path root = context.repoRoot().toAbsolutePath().normalize();
 
         List<String> matches = new ArrayList<>();

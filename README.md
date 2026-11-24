@@ -59,6 +59,9 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 
 ### Code graph construction (implemented)
 
+- **Languages**: Java/Spring and Python/FastAPI backends, plus line-based checks on frontend JS/TS/Vue/HTML. The language is detected from file extensions when the code graph is built, and the project's `language` is updated (`java`, `python`, `java,python`).
+- **Python/FastAPI**: parsed with tree-sitter. Routes from `@app.get`/`@router.post` (with `APIRouter(prefix=)` and `include_router(prefix=)`), `Depends(...)` dependencies listed on each entry point (`dependencies` in the API; a route without one is a missing-authentication candidate), and ~200 Python sink APIs in the same categories (`subprocess`, `os.system`, python-nmap → COMMAND, `requests`/`httpx` → SSRF, `open`/`FileResponse` → PATH, built SQL strings passed to `execute`/`sqlalchemy.text` → SQL, `pickle`/`yaml.load` → DESERIALIZATION). See [core-code-agent](https://github.com/yeomyaloo/core-code-agent) for details.
+
 - **Source-only analysis, no library jars**: types are inferred from import statements and variable/field declarations, falling back to the JavaParser symbol solver. Repositories can be analyzed without building them.
 - **Structure extraction**: builds the file → class → method hierarchy and inheritance links (interface method → implementing method).
 - **HTTP entry point detection**: reads `@GetMapping`, `@PostMapping`, `@RequestMapping` etc. in `@RestController`/`@Controller` classes and normalizes them to the form `GET /api/users/search`. Class-level paths, multiple paths and `method = {GET, HEAD}` are handled.
@@ -184,7 +187,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 11 | Frontend code: JS/TS/Vue/HTML risky patterns as sinks (XSS, eval, open redirect, token storage, postMessage, hardcoded secrets), npm dependency CVEs | ✅ Done |
 | 12 | Evaluation harness: benchmark app with an answer key (11 vulnerabilities, 10 safe look-alikes), CI check that the code graph covers it, LLM scoring script (recall, precision, trap false positives, run-to-run consistency) | ✅ Done |
 | 13 | Shared engine: the code graph engine moved to the [core-code-agent](https://github.com/yeomyaloo/core-code-agent) library, used by both this server and mcp-code-agent (no behavior change) | ✅ Done |
-| 14 | Python (FastAPI) analysis in the shared engine: language plugins, FastAPI entry points, Python sinks | ⏳ Planned |
+| 14 | Python (FastAPI) analysis (core-code-agent 0.2.0): language detection, FastAPI entry points with `Depends`, Python sinks; the project language is set from the detected languages | ✅ Done |
 
 ---
 
@@ -379,7 +382,7 @@ The response contains the number of files, classes, methods, entry points and si
 | `POST /api/projects/{id}/dependency-scans` | Scan the build files' libraries for known vulnerabilities (OSV), save the scan with its commit, and return it with `diff` against the previous scan (`changed`, `added`, `removed`, `newVulnerabilities`, `resolvedVulnerabilities`). `report.checked=false` and `report.error` when OSV could not be asked |
 | `GET /api/projects/{id}/dependency-scans` | Scan history (newest first, up to 50): commit, time, counts |
 | `GET /api/projects/{id}/dependency-scans/{scanId}` | A saved scan and its diff against the scan before it |
-| `GET /api/projects/{id}/code-graph/entry-points` | HTTP entry points |
+| `GET /api/projects/{id}/code-graph/entry-points` | HTTP entry points (FastAPI entry points include `dependencies`) |
 | `GET /api/projects/{id}/code-graph/sinks` | Sinks (category, CWE, code snippet, location) |
 | `GET /api/projects/{id}/code-graph/sink-paths?maxDepth=12` | Entry point → sink call paths (max depth 30, at most 500) |
 | `GET /api/projects/{id}/code-graph/nodes/{nodeId}/callers` | Methods that call this method |
@@ -715,6 +718,9 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 
 ### 코드 그래프 생성 (구현됨)
 
+- **언어**: Java/Spring 과 Python/FastAPI 백엔드, 프론트엔드 JS/TS/Vue/HTML(줄 단위 점검). 코드 그래프를 만들 때 파일 확장자로 언어를 판별하고 프로젝트의 `language` 를 바꾼다(`java`, `python`, `java,python`).
+- **Python/FastAPI**: tree-sitter 로 파싱한다. `@app.get`·`@router.post` 라우트(`APIRouter(prefix=)`, `include_router(prefix=)` 경로 포함), 진입점마다 `Depends(...)` 의존 함수(API 의 `dependencies`, 없으면 인증 누락 후보), 같은 분류의 파이썬 위험 API 약 200개(`subprocess`, `os.system`, python-nmap → COMMAND, `requests`·`httpx` → SSRF, `open`·`FileResponse` → PATH, 조립한 SQL 문자열을 `execute`·`sqlalchemy.text` 에 넘김 → SQL, `pickle`·`yaml.load` → DESERIALIZATION). 자세한 내용은 [core-code-agent](https://github.com/yeomyaloo/core-code-agent).
+
 - **라이브러리 jar 없이 소스만으로 분석**: import 문과 변수·필드 선언으로 타입을 알아내고, 안 되면 JavaParser symbol solver에 맡긴다. 빌드하지 않은 저장소도 바로 분석할 수 있다.
 - **구조 추출**: 파일 → 클래스 → 메서드 계층과 상속 관계(인터페이스 메서드 → 구현 메서드)를 만든다.
 - **HTTP 진입점 탐지**: `@RestController`/`@Controller`의 `@GetMapping`·`@PostMapping`·`@RequestMapping` 등을 읽어 `GET /api/users/search` 형태로 정리한다. 클래스 레벨 경로, 여러 경로, `method = {GET, HEAD}`도 처리한다.
@@ -840,7 +846,7 @@ be-code-agent는 저장소 소스코드를 정적으로 파싱해 **코드 그�
 | 11 | 프론트엔드 코드: JS/TS/Vue/HTML의 위험한 패턴을 위험 지점으로 (XSS, eval, 오픈 리다이렉트, 토큰 저장, postMessage, 하드코딩된 비밀값), npm 라이브러리 CVE | ✅ 완료 |
 | 12 | 평가 하네스: 정답이 있는 벤치마크 앱(취약점 11개, 안전한 함정 10개), 코드 그래프가 다 잡는지 CI 검사, LLM 채점 스크립트(재현율, 정밀도, 함정 오탐, 실행 간 일관성) | ✅ 완료 |
 | 13 | 공용 엔진: 코드 그래프 엔진을 [core-code-agent](https://github.com/yeomyaloo/core-code-agent) 라이브러리로 옮겨 이 서버와 mcp-code-agent 가 같이 씀 (동작 변화 없음) | ✅ 완료 |
-| 14 | 공용 엔진에 Python(FastAPI) 분석 추가: 언어 플러그인, FastAPI 진입점, 파이썬 위험 지점 | ⏳ 예정 |
+| 14 | Python(FastAPI) 분석 (core-code-agent 0.2.0): 언어 자동 판별, `Depends` 를 포함한 FastAPI 진입점, 파이썬 위험 지점. 프로젝트 언어를 판별 결과로 기록 | ✅ 완료 |
 
 ---
 
@@ -1035,7 +1041,7 @@ curl -X POST localhost:8080/api/projects/1/index
 | `POST /api/projects/{id}/dependency-scans` | 빌드 파일의 라이브러리를 OSV로 검사하고 커밋과 함께 저장한 뒤, 지난 검사와의 비교(`diff`: `changed`, `added`, `removed`, `newVulnerabilities`, `resolvedVulnerabilities`)와 함께 돌려준다. OSV에 묻지 못하면 `report.checked=false`와 `report.error` |
 | `GET /api/projects/{id}/dependency-scans` | 검사 기록 (최신순, 최대 50개): 커밋, 시각, 개수 |
 | `GET /api/projects/{id}/dependency-scans/{scanId}` | 저장한 검사 하나와 그 앞 검사와의 비교 |
-| `GET /api/projects/{id}/code-graph/entry-points` | HTTP 진입점 |
+| `GET /api/projects/{id}/code-graph/entry-points` | HTTP 진입점 (FastAPI 진입점은 `dependencies` 포함) |
 | `GET /api/projects/{id}/code-graph/sinks` | 위험 지점 (분류, CWE, 코드 조각, 위치) |
 | `GET /api/projects/{id}/code-graph/sink-paths?maxDepth=12` | 진입점 → 위험 지점 호출 경로 (최대 깊이 30, 최대 500개) |
 | `GET /api/projects/{id}/code-graph/nodes/{nodeId}/callers` | 이 메서드를 호출하는 메서드 |

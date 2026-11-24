@@ -42,7 +42,7 @@ public class CodeGraphIndexer {
      */
     public record IndexResult(Long projectId, long files, long classes, long methods, long entryPoints, long sinks,
                               long callEdges, long overrideEdges, int unresolvedCalls, int removedNodes,
-                              int retainedNodes, List<String> parseErrors, long elapsedMs) {
+                              int retainedNodes, List<String> parseErrors, long elapsedMs, List<String> languages) {
     }
 
     /**
@@ -57,6 +57,10 @@ public class CodeGraphIndexer {
 
         CodeGraphEngine.Result analyzed = CodeGraphEngine.analyze(Path.of(project.getRepoPath()));
         CodeGraphDraft draft = analyzed.draft();
+        String language = projectLanguage(analyzed.languages());
+        if (language != null) {
+            project.detectedLanguage(language);
+        }
 
         jdbcTemplate.update("delete from code_edge where project_id = ?", projectId);
         upsertNodes(projectId, List.copyOf(draft.nodes()));
@@ -79,9 +83,21 @@ public class CodeGraphIndexer {
                 draft.count(CodeNodeKind.ENTRY_POINT), draft.count(CodeNodeKind.SINK),
                 draft.count(CodeEdgeKind.CALLS), draft.count(CodeEdgeKind.OVERRIDDEN_BY),
                 draft.unresolvedCalls(), removed, retained, analyzed.parseErrors(),
-                System.currentTimeMillis() - start);
+                System.currentTimeMillis() - start, List.copyOf(analyzed.languages()));
         log.info("코드 그래프 생성 완료: {}", result);
         return result;
+    }
+
+    /**
+     * 프로젝트에 표시할 언어. 백엔드 언어(java, python)를 쉼표로 잇고, 프론트엔드 코드만 있으면 javascript.
+     * 분석할 소스가 없으면 null (등록할 때 값 유지)
+     */
+    static String projectLanguage(java.util.Set<String> languages) {
+        List<String> backend = languages.stream().filter(l -> !l.equals("javascript")).toList();
+        if (!backend.isEmpty()) {
+            return String.join(",", backend);
+        }
+        return languages.isEmpty() ? null : "javascript";
     }
 
     private void upsertNodes(Long projectId, List<NodeDraft> nodes) {
