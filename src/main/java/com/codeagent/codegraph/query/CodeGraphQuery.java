@@ -33,9 +33,12 @@ public class CodeGraphQuery {
                                  List<String> dependencies) {
     }
 
-    /** @param frontend 프론트엔드(JS/TS) 코드의 위험 지점이면 true. 진입점에서 이어지는 경로가 없다 */
+    /**
+     * @param frontend 프론트엔드(JS/TS) 코드의 위험 지점이면 true. 진입점에서 이어지는 경로가 없다
+     * @param language 코드 언어 (java, python, javascript)
+     */
     public record SinkView(Long id, String category, String cwe, String api, String method, String snippet,
-                           String filePath, Integer line, boolean frontend) {
+                           String filePath, Integer line, boolean frontend, String language) {
     }
 
     public record SinkPathView(EntryPointView entryPoint, SinkView sink, List<CodeNodeView> path) {
@@ -54,7 +57,8 @@ public class CodeGraphQuery {
         return jdbcTemplate.query("""
                 select id, props ->> 'category' as category, props ->> 'cwe' as cwe, props ->> 'api' as api,
                        props ->> 'method' as method, props ->> 'snippet' as snippet, file_path, start_line,
-                       coalesce((props ->> 'frontend')::boolean, false) as frontend
+                       coalesce((props ->> 'frontend')::boolean, false) as frontend,
+                       coalesce(props ->> 'language', case when (props ->> 'frontend')::boolean then 'javascript' else 'java' end) as language
                 from code_node where project_id = ? and kind = 'SINK' and removed_at is null
                 order by category, file_path, start_line
                 """, (rs, i) -> sink(rs), projectId);
@@ -180,7 +184,8 @@ public class CodeGraphQuery {
     private static SinkView sink(ResultSet rs) throws SQLException {
         return new SinkView(rs.getLong("id"), rs.getString("category"), rs.getString("cwe"), rs.getString("api"),
                 rs.getString("method"), rs.getString("snippet"), rs.getString("file_path"),
-                (Integer) rs.getObject("start_line"), hasColumn(rs, "frontend") && rs.getBoolean("frontend"));
+                (Integer) rs.getObject("start_line"), hasColumn(rs, "frontend") && rs.getBoolean("frontend"),
+                hasColumn(rs, "language") ? rs.getString("language") : null);
     }
 
     private static boolean hasColumn(ResultSet rs, String column) throws SQLException {

@@ -89,6 +89,7 @@ class PythonCodeGraphTest {
                     .contains("app.routers.scan.run_nmap", "app.services.scanner.run_nmap");
         });
         assertThat(paths).anySatisfy(p -> assertThat(p.sink().api()).isEqualTo("cursor.execute"));
+        assertThat(query.sinks(project.getId())).allSatisfy(sink -> assertThat(sink.language()).isEqualTo("python"));
     }
 
     @Test
