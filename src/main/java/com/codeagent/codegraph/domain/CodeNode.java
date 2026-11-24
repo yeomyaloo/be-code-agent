@@ -1,5 +1,7 @@
 package com.codeagent.codegraph.domain;
 
+import com.codeagent.core.model.CodeNodeKind;
+
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;

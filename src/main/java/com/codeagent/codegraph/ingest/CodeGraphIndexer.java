@@ -1,9 +1,11 @@
 package com.codeagent.codegraph.ingest;
 
-import com.codeagent.codegraph.domain.CodeEdgeKind;
-import com.codeagent.codegraph.domain.CodeNodeKind;
-import com.codeagent.codegraph.ingest.CodeGraphDraft.EdgeDraft;
-import com.codeagent.codegraph.ingest.CodeGraphDraft.NodeDraft;
+import com.codeagent.core.CodeGraphEngine;
+import com.codeagent.core.model.CodeEdgeKind;
+import com.codeagent.core.model.CodeNodeKind;
+import com.codeagent.core.model.CodeGraphDraft;
+import com.codeagent.core.model.CodeGraphDraft.EdgeDraft;
+import com.codeagent.core.model.CodeGraphDraft.NodeDraft;
 import com.codeagent.project.Project;
 import com.codeagent.project.ProjectRepository;
 import lombok.RequiredArgsConstructor;
@@ -53,8 +55,8 @@ public class CodeGraphIndexer {
                 .orElseThrow(() -> new NoSuchElementException("프로젝트 없음: " + projectId));
         long start = System.currentTimeMillis();
 
-        JavaProject javaProject = JavaProject.load(Path.of(project.getRepoPath()));
-        CodeGraphDraft draft = new CodeGraphBuilder(javaProject).build();
+        CodeGraphEngine.Result analyzed = CodeGraphEngine.analyze(Path.of(project.getRepoPath()));
+        CodeGraphDraft draft = analyzed.draft();
 
         jdbcTemplate.update("delete from code_edge where project_id = ?", projectId);
         upsertNodes(projectId, List.copyOf(draft.nodes()));
@@ -76,7 +78,7 @@ public class CodeGraphIndexer {
                 draft.count(CodeNodeKind.FILE), draft.count(CodeNodeKind.CLASS), draft.count(CodeNodeKind.METHOD),
                 draft.count(CodeNodeKind.ENTRY_POINT), draft.count(CodeNodeKind.SINK),
                 draft.count(CodeEdgeKind.CALLS), draft.count(CodeEdgeKind.OVERRIDDEN_BY),
-                draft.unresolvedCalls(), removed, retained, javaProject.parseErrors(),
+                draft.unresolvedCalls(), removed, retained, analyzed.parseErrors(),
                 System.currentTimeMillis() - start);
         log.info("코드 그래프 생성 완료: {}", result);
         return result;

@@ -1,10 +1,9 @@
 package com.codeagent.benchmark;
 
-import com.codeagent.codegraph.domain.CodeEdgeKind;
-import com.codeagent.codegraph.domain.CodeNodeKind;
-import com.codeagent.codegraph.ingest.CodeGraphBuilder;
-import com.codeagent.codegraph.ingest.CodeGraphDraft;
-import com.codeagent.codegraph.ingest.JavaProject;
+import com.codeagent.core.model.CodeEdgeKind;
+import com.codeagent.core.model.CodeNodeKind;
+import com.codeagent.core.CodeGraphEngine;
+import com.codeagent.core.model.CodeGraphDraft;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -36,9 +35,9 @@ class BenchmarkSinkTest {
 
     @BeforeAll
     static void build() throws Exception {
-        JavaProject project = JavaProject.load(APP);
-        assertThat(project.parseErrors()).isEmpty();
-        draft = new CodeGraphBuilder(project).build();
+        CodeGraphEngine.Result analyzed = CodeGraphEngine.analyze(APP);
+        assertThat(analyzed.parseErrors()).isEmpty();
+        draft = analyzed.draft();
         expected = JsonMapper.builder().build().readTree(Files.readString(EXPECTED));
     }
 
