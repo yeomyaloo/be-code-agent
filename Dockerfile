@@ -7,7 +7,7 @@ WORKDIR /src
 
 # 의존성을 먼저 받아 두면 소스만 바뀌었을 때 이 층을 다시 쓴다
 # 공용 코드 그래프 엔진은 GitHub Packages 토큰 없이 받도록 태그의 소스를 가져와 composite build 로 묶는다
-ARG CORE_CODE_AGENT_REF=v0.2.0
+ARG CORE_CODE_AGENT_REF=v0.3.0
 ADD https://github.com/yeomyaloo/core-code-agent.git#${CORE_CODE_AGENT_REF} /core-code-agent
 
 COPY gradlew settings.gradle build.gradle ./
