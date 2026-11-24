@@ -40,7 +40,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.flywaydb:flyway-database-postgresql'
-	implementation 'com.codeagent:core-code-agent:0.2.0'
+	implementation 'com.codeagent:core-code-agent:0.3.0'
 	implementation 'com.anthropic:anthropic-java:2.68.0'
 	implementation 'org.eclipse.jgit:org.eclipse.jgit:7.8.0.202609011348-r'
 	compileOnly 'org.projectlombok:lombok'
