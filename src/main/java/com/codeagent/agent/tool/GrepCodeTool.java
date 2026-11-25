@@ -40,9 +40,17 @@ public class GrepCodeTool implements AgentTool {
 
     /** 저장소에서 찾은 백엔드 언어의 소스 */
     static String defaultGlob(List<String> languages) {
-        boolean python = languages.contains("python");
-        boolean java = languages.contains("java") || !python;
-        return java && python ? "**.{java,py}" : python ? "**.py" : "**.java";
+        java.util.List<String> extensions = new java.util.ArrayList<>();
+        if (languages.contains("java") || !(languages.contains("python") || languages.contains("kotlin"))) {
+            extensions.add("java");
+        }
+        if (languages.contains("kotlin")) {
+            extensions.add("kt");
+        }
+        if (languages.contains("python")) {
+            extensions.add("py");
+        }
+        return extensions.size() == 1 ? "**." + extensions.get(0) : "**.{" + String.join(",", extensions) + "}";
     }
 
     @Override

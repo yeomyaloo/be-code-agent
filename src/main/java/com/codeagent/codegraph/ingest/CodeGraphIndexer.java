@@ -89,7 +89,7 @@ public class CodeGraphIndexer {
     }
 
     /**
-     * 프로젝트에 표시할 언어. 백엔드 언어(java, python)를 쉼표로 잇고, 프론트엔드 코드만 있으면 javascript.
+     * 프로젝트에 표시할 언어. 백엔드 언어(java, python, kotlin)를 쉼표로 잇고, 프론트엔드 코드만 있으면 javascript.
      * 분석할 소스가 없으면 null (등록할 때 값 유지)
      */
     static String projectLanguage(java.util.Set<String> languages) {
