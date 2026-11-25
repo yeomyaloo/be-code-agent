@@ -216,6 +216,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 16 | Flask and Django (cotcha-trail 0.12.0): Flask routes, blueprints, `add_url_rule`, Flask-RESTful; Django `urlpatterns`, `include`, class views, DRF routers and `@action`; entry points list auth hints (`login_required`, `permission_classes`, `LoginRequiredMixin`, `before_request`); SSTI, Django redirect/`mark_safe`/`RawSQL` sinks | ✅ Done |
 | 16-1 | Django `ROOT_URLCONF`: entry points start from the settings' root urls, so unconnected urls files are left out (cotcha-trail 0.13.0); also when it comes from environment variables or `.env` files (0.14.0), docker-compose `environment:`/`env_file:` and Dockerfile `ENV` (0.15.0), Kubernetes manifests and Kustomize (0.16.0) | ✅ Done |
 | 16-2 | Friendlier tool input errors: the agent's tool arguments are checked against the schema before running; unknown names get a suggestion and all problems are listed at once | ✅ Done |
+| 16-3 | One finding per weakness: Worker and Verifier prompts ask for one finding per location + CWE (missing auth separate from injection, secret separate from weak algorithm), record code-level weaknesses without a caller at lower severity, and do not reject for those reasons (same rule as cotcha-pocket and cotcha-pinch, which made blind benchmark runs consistent) | ✅ Done |
 
 ---
 
@@ -896,6 +897,7 @@ cotcha-net는 저장소 소스코드를 정적으로 파싱해 **코드 그래�
 | 16 | Flask·Django (cotcha-trail 0.12.0): Flask 라우트·블루프린트·`add_url_rule`·Flask-RESTful, Django `urlpatterns`·`include`·클래스 뷰·DRF 라우터·`@action`. 진입점에 인증 단서(`login_required`, `permission_classes`, `LoginRequiredMixin`, `before_request`). SSTI, Django 리다이렉트·`mark_safe`·`RawSQL` 위험 지점 | ✅ 완료 |
 | 16-1 | Django `ROOT_URLCONF`: settings 의 루트 urls 에서 시작해서 연결되지 않은 urls 파일은 뺀다 (cotcha-trail 0.13.0). 환경 변수·`.env` 파일로 정해도 읽는다 (0.14.0). docker-compose `environment:`·`env_file:`, Dockerfile `ENV` 도 (0.15.0). Kubernetes 매니페스트·Kustomize 도 (0.16.0) | ✅ 완료 |
 | 16-2 | 도구 입력 오류 안내: 에이전트의 도구 인자를 실행 전에 스키마와 맞춰 보고, 모르는 이름에는 비슷한 인자를 제안하고, 문제를 한 번에 보여줌 | ✅ 완료 |
+| 16-3 | 약점 하나에 발견 하나: Worker·Verifier 프롬프트가 위치 하나 + CWE 하나마다 발견 하나(인증 누락과 인젝션, 비밀값과 약한 알고리즘은 따로), 부르는 곳이 없는 코드 자체의 약점은 심각도를 낮춰 기록, 이 이유로는 기각하지 않음 (cotcha-pocket·cotcha-pinch 와 같은 규칙. 블라인드 벤치마크의 실행 간 차이를 없앴음) | ✅ 완료 |
 
 ---
 
