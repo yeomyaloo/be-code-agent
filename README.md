@@ -80,6 +80,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 - **Languages**: Java/Spring and Python/FastAPI backends, plus line-based checks on frontend JS/TS/Vue/HTML. The language is detected from file extensions when the code graph is built, and the project's `language` is updated (`java`, `python`, `java,python`).
 - **Python/FastAPI**: parsed with tree-sitter. Routes from `@app.get`/`@router.post` (with `APIRouter(prefix=)` and `include_router(prefix=)`), `Depends(...)` dependencies listed on each entry point (`dependencies` in the API; a route without one is a missing-authentication candidate), and ~200 Python sink APIs in the same categories (`subprocess`, `os.system`, python-nmap → COMMAND, `requests`/`httpx` → SSRF, `open`/`FileResponse` → PATH, built SQL strings passed to `execute`/`sqlalchemy.text` → SQL, `pickle`/`yaml.load` → DESERIALIZATION). See [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail) for details.
 - **Kotlin**: parsed with tree-sitter (cotcha-trail 0.8.0) for structure, calls and the same sink rules as Java. Calls between Java and Kotlin are linked, so a Java Spring controller that calls a Kotlin service reaches the Kotlin sink. Kotlin Spring controllers (`@RestController` + `@GetMapping`…) are entry points too (cotcha-trail 0.9.0).
+- **Flask / Django** (cotcha-trail 0.12.0): Flask `@app.route`/`@bp.get` with blueprint prefixes, `add_url_rule`, `MethodView` and Flask-RESTful resources; Django `urlpatterns` (`path`, `re_path`, `include`), function and class-based views, DRF routers (`list`/`retrieve`/… and `@action`). Each entry point lists auth hints (`guards`: `login_required`, `permission_classes`, `LoginRequiredMixin`, `before_request`); an empty list is a missing-authentication candidate once global settings are checked.
 - **WebFlux functional routers** (Java and Kotlin, cotcha-trail 0.10.0): `RouterFunctions.route(GET("/x"), handler::get)`, `.andRoute`, `nest(path("/api"), …)`, the `route().GET(…).path("/v2", b -> …)` builder and the Kotlin `router { }` / `coRouter { }` DSL give HTTP entry points routed to the handler method (a method reference, or the first call in a lambda).
 
 - **Source-only analysis, no library jars**: types are inferred from import statements and variable/field declarations, falling back to the JavaParser symbol solver. Repositories can be analyzed without building them.
@@ -212,6 +213,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 15-1 | Kotlin Spring controllers as entry points (cotcha-trail 0.9.0) | ✅ Done |
 | 15-2 | WebFlux functional routers as entry points, Java (`RouterFunctions.route`, `route()` builder, `nest`/`path`) and Kotlin (`router { }`/`coRouter { }`) (cotcha-trail 0.10.0) | ✅ Done |
 | 15-3 | Constant paths (`@GetMapping(Paths.USERS)`, `GET(BASE + "/x")`, Kotlin `const val` and templates) resolve to their values in entry point names (cotcha-trail 0.11.0) | ✅ Done |
+| 16 | Flask and Django (cotcha-trail 0.12.0): Flask routes, blueprints, `add_url_rule`, Flask-RESTful; Django `urlpatterns`, `include`, class views, DRF routers and `@action`; entry points list auth hints (`login_required`, `permission_classes`, `LoginRequiredMixin`, `before_request`); SSTI, Django redirect/`mark_safe`/`RawSQL` sinks | ✅ Done |
 
 ---
 
@@ -406,7 +408,7 @@ The response contains the number of files, classes, methods, entry points and si
 | `POST /api/projects/{id}/dependency-scans` | Scan the build files' libraries for known vulnerabilities (OSV), save the scan with its commit, and return it with `diff` against the previous scan (`changed`, `added`, `removed`, `newVulnerabilities`, `resolvedVulnerabilities`). `report.checked=false` and `report.error` when OSV could not be asked |
 | `GET /api/projects/{id}/dependency-scans` | Scan history (newest first, up to 50): commit, time, counts |
 | `GET /api/projects/{id}/dependency-scans/{scanId}` | A saved scan and its diff against the scan before it |
-| `GET /api/projects/{id}/code-graph/entry-points` | HTTP entry points (FastAPI entry points include `dependencies`) |
+| `GET /api/projects/{id}/code-graph/entry-points` | HTTP entry points (FastAPI entry points include `dependencies`; Python entry points include `framework`, and Flask/Django ones `guards`, their auth hints) |
 | `GET /api/projects/{id}/code-graph/sinks` | Sinks (category, CWE, code snippet, location) |
 | `GET /api/projects/{id}/code-graph/sink-paths?maxDepth=12` | Entry point → sink call paths (max depth 30, at most 500) |
 | `GET /api/projects/{id}/code-graph/nodes/{nodeId}/callers` | Methods that call this method |
@@ -756,6 +758,7 @@ cotcha-net는 저장소 소스코드를 정적으로 파싱해 **코드 그래�
 - **언어**: Java/Spring 과 Python/FastAPI 백엔드, 프론트엔드 JS/TS/Vue/HTML(줄 단위 점검). 코드 그래프를 만들 때 파일 확장자로 언어를 판별하고 프로젝트의 `language` 를 바꾼다(`java`, `python`, `java,python`).
 - **Python/FastAPI**: tree-sitter 로 파싱한다. `@app.get`·`@router.post` 라우트(`APIRouter(prefix=)`, `include_router(prefix=)` 경로 포함), 진입점마다 `Depends(...)` 의존 함수(API 의 `dependencies`, 없으면 인증 누락 후보), 같은 분류의 파이썬 위험 API 약 200개(`subprocess`, `os.system`, python-nmap → COMMAND, `requests`·`httpx` → SSRF, `open`·`FileResponse` → PATH, 조립한 SQL 문자열을 `execute`·`sqlalchemy.text` 에 넘김 → SQL, `pickle`·`yaml.load` → DESERIALIZATION). 자세한 내용은 [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail).
 - **Kotlin**: tree-sitter 로 파싱해 구조·호출·Java 와 같은 위험 지점 규칙을 본다(cotcha-trail 0.8.0). Java ↔ Kotlin 호출을 이어서, Kotlin 서비스를 부르는 Java Spring 컨트롤러에서 Kotlin 위험 지점까지 경로가 생긴다. Kotlin 으로 쓴 Spring 컨트롤러(`@RestController` + `@GetMapping`…)도 진입점으로 찾는다(cotcha-trail 0.9.0).
+- **Flask / Django** (cotcha-trail 0.12.0): Flask `@app.route`·`@bp.get` 와 블루프린트 경로, `add_url_rule`, `MethodView`, Flask-RESTful 리소스, Django `urlpatterns`(`path`, `re_path`, `include`), 함수·클래스 뷰, DRF 라우터(`list`·`retrieve`… 와 `@action`). 진입점마다 인증 단서(`guards`: `login_required`, `permission_classes`, `LoginRequiredMixin`, `before_request`)를 적는다. 비어 있으면 전역 설정을 확인한 뒤 인증 누락 후보로 본다.
 - **WebFlux 함수형 라우터** (Java·Kotlin, cotcha-trail 0.10.0): `RouterFunctions.route(GET("/x"), handler::get)`, `.andRoute`, `nest(path("/api"), …)`, `route().GET(…).path("/v2", b -> …)` 빌더, Kotlin `router { }`·`coRouter { }` DSL 에서 HTTP 진입점을 찾아 처리 메서드(메서드 참조, 또는 람다 안 첫 호출)로 잇는다.
 
 - **라이브러리 jar 없이 소스만으로 분석**: import 문과 변수·필드 선언으로 타입을 알아내고, 안 되면 JavaParser symbol solver에 맡긴다. 빌드하지 않은 저장소도 바로 분석할 수 있다.
@@ -888,6 +891,7 @@ cotcha-net는 저장소 소스코드를 정적으로 파싱해 **코드 그래�
 | 15-1 | Kotlin 으로 쓴 Spring 컨트롤러를 진입점으로 (cotcha-trail 0.9.0) | ✅ 완료 |
 | 15-2 | WebFlux 함수형 라우터를 진입점으로: Java(`RouterFunctions.route`, `route()` 빌더, `nest`·`path`), Kotlin(`router { }`·`coRouter { }`) (cotcha-trail 0.10.0) | ✅ 완료 |
 | 15-3 | 상수 경로(`@GetMapping(Paths.USERS)`, `GET(BASE + "/x")`, Kotlin `const val`·템플릿)를 진입점 이름에서 값으로 풂 (cotcha-trail 0.11.0) | ✅ 완료 |
+| 16 | Flask·Django (cotcha-trail 0.12.0): Flask 라우트·블루프린트·`add_url_rule`·Flask-RESTful, Django `urlpatterns`·`include`·클래스 뷰·DRF 라우터·`@action`. 진입점에 인증 단서(`login_required`, `permission_classes`, `LoginRequiredMixin`, `before_request`). SSTI, Django 리다이렉트·`mark_safe`·`RawSQL` 위험 지점 | ✅ 완료 |
 
 ---
 
@@ -1082,7 +1086,7 @@ curl -X POST localhost:8080/api/projects/1/index
 | `POST /api/projects/{id}/dependency-scans` | 빌드 파일의 라이브러리를 OSV로 검사하고 커밋과 함께 저장한 뒤, 지난 검사와의 비교(`diff`: `changed`, `added`, `removed`, `newVulnerabilities`, `resolvedVulnerabilities`)와 함께 돌려준다. OSV에 묻지 못하면 `report.checked=false`와 `report.error` |
 | `GET /api/projects/{id}/dependency-scans` | 검사 기록 (최신순, 최대 50개): 커밋, 시각, 개수 |
 | `GET /api/projects/{id}/dependency-scans/{scanId}` | 저장한 검사 하나와 그 앞 검사와의 비교 |
-| `GET /api/projects/{id}/code-graph/entry-points` | HTTP 진입점 (FastAPI 진입점은 `dependencies` 포함) |
+| `GET /api/projects/{id}/code-graph/entry-points` | HTTP 진입점 (FastAPI 진입점은 `dependencies`, Python 진입점은 `framework`, Flask·Django 진입점은 인증 단서 `guards` 포함) |
 | `GET /api/projects/{id}/code-graph/sinks` | 위험 지점 (분류, CWE, 코드 조각, 위치) |
 | `GET /api/projects/{id}/code-graph/sink-paths?maxDepth=12` | 진입점 → 위험 지점 호출 경로 (최대 깊이 30, 최대 500개) |
 | `GET /api/projects/{id}/code-graph/nodes/{nodeId}/callers` | 이 메서드를 호출하는 메서드 |

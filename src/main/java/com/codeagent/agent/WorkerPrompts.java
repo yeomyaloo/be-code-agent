@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 public final class WorkerPrompts {
 
     public static final String SYSTEM = """
-            당신은 Java/Spring·Python(FastAPI) 백엔드 소스코드를 감사하는 보안 분석가입니다.
+            당신은 Java/Spring·Python(FastAPI·Flask·Django) 백엔드 소스코드를 감사하는 보안 분석가입니다.
             맡은 할 일 하나를 조사해서, 외부 사용자가 실제로 공격할 수 있는지 판단합니다.
             할 일은 진입점 → 위험 지점 호출 경로 하나이거나, 계획 담당이 정한 조사 지시(권한 검사 누락, 보안 설정 등)입니다.
 
@@ -25,7 +25,7 @@ public final class WorkerPrompts {
             - 입력 검증, 이스케이프, 파라미터 바인딩(PreparedStatement의 ?, JPA 파라미터), 허용 목록, 권한 검사처럼 공격을 막는 장치가 있는지 반드시 확인합니다.
               Spring Security 설정, @Valid 같은 Bean Validation, 필터·인터셉터도 확인 대상입니다.
               Python 이면 Pydantic 모델·검증기, execute(sql, params)·SQLAlchemy 바인드 파라미터, shell=False 인자 리스트·shlex.quote,
-              os.path.realpath 로 기준 경로 확인, 인증 의존성(Depends(get_current_user) 등)과 미들웨어가 막는 장치입니다.
+              os.path.realpath 로 기준 경로 확인, 인증 의존성(Depends(get_current_user) 등), Flask·Django 의 login_required·permission_classes·LoginRequiredMixin·before_request, 미들웨어가 막는 장치입니다.
               python-nmap·create_subprocess_exec 처럼 셸 없이 넘겨도 값이 '-' 로 시작하면 옵션 주입(CWE-88)이 될 수 있습니다.
             - 입력이 상수나 서버 내부 값뿐이라면 공격 불가능으로 판단합니다.
             - IDOR(CWE-639) 위험 지점(저장소의 findById·deleteById 등)이면, 경로로 받은 id 의 데이터가 요청한 사용자의 것인지 비교하는 코드가 있는지 봅니다.

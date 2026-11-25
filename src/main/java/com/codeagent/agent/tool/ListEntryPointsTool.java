@@ -45,6 +45,10 @@ public class ListEntryPointsTool implements AgentTool {
     }
 
     static String dependencies(EntryPointView e) {
+        if (e.guards() != null) {
+            // Flask·Django: 비어 있어도 전역 설정(미들웨어, DEFAULT_PERMISSION_CLASSES)이 막을 수 있다
+            return e.guards().isEmpty() ? " · 인증 단서 없음(전역 설정은 따로 확인)" : " · 인증 단서: " + String.join(", ", e.guards());
+        }
         if (e.dependencies() == null) {
             return "";
         }

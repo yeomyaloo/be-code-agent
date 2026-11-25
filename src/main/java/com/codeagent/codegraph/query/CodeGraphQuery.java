@@ -28,9 +28,13 @@ public class CodeGraphQuery {
     public record CodeNodeView(Long id, String kind, String qualifiedName, String filePath, Integer line) {
     }
 
-    /** @param dependencies FastAPI 진입점의 Depends(...) 의존 함수. Java 진입점은 null (정보 없음) */
+    /**
+     * @param dependencies FastAPI 진입점의 Depends(...) 의존 함수. 그 밖의 진입점은 null (정보 없음)
+     * @param framework    fastapi, flask, django (Java·Kotlin 은 null)
+     * @param guards       Flask·Django 진입점의 인증·권한 단서 (데코레이터, Mixin, permission_classes, before_request). 그 밖은 null
+     */
     public record EntryPointView(Long id, String httpMethod, String path, String handler, String filePath, Integer line,
-                                 List<String> dependencies) {
+                                 List<String> dependencies, String framework, List<String> guards) {
     }
 
     /**
@@ -47,7 +51,8 @@ public class CodeGraphQuery {
     public List<EntryPointView> entryPoints(Long projectId) {
         return jdbcTemplate.query("""
                 select id, props ->> 'httpMethod' as http_method, props ->> 'path' as path, props ->> 'handler' as handler,
-                       file_path, start_line, props -> 'dependencies' as dependencies
+                       file_path, start_line, props -> 'dependencies' as dependencies, props ->> 'framework' as framework,
+                       props -> 'guards' as guards
                 from code_node where project_id = ? and kind = 'ENTRY_POINT' and removed_at is null
                 order by props ->> 'path', props ->> 'httpMethod'
                 """, (rs, i) -> entryPoint(rs), projectId);
@@ -161,7 +166,7 @@ public class CodeGraphQuery {
     private static EntryPointView entryPoint(ResultSet rs) throws SQLException {
         return new EntryPointView(rs.getLong("id"), rs.getString("http_method"), rs.getString("path"),
                 rs.getString("handler"), rs.getString("file_path"), (Integer) rs.getObject("start_line"),
-                stringList(rs.getString("dependencies")));
+                stringList(rs.getString("dependencies")), rs.getString("framework"), stringList(rs.getString("guards")));
     }
 
     /** JSON 문자열 배열 → 목록. 없으면 null */

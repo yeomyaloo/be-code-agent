@@ -7,7 +7,7 @@ WORKDIR /src
 
 # 의존성을 먼저 받아 두면 소스만 바뀌었을 때 이 층을 다시 쓴다
 # 공용 코드 그래프 엔진은 GitHub Packages 토큰 없이 받도록 태그의 소스를 가져와 composite build 로 묶는다
-ARG CORE_CODE_AGENT_REF=v0.11.0
+ARG CORE_CODE_AGENT_REF=v0.12.0
 ADD https://github.com/yeomyaloo/cotcha-trail.git#${CORE_CODE_AGENT_REF} /cotcha-trail
 
 COPY gradlew settings.gradle build.gradle ./
