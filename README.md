@@ -80,6 +80,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 - **Languages**: Java/Spring and Python/FastAPI backends, plus line-based checks on frontend JS/TS/Vue/HTML. The language is detected from file extensions when the code graph is built, and the project's `language` is updated (`java`, `python`, `java,python`).
 - **Python/FastAPI**: parsed with tree-sitter. Routes from `@app.get`/`@router.post` (with `APIRouter(prefix=)` and `include_router(prefix=)`), `Depends(...)` dependencies listed on each entry point (`dependencies` in the API; a route without one is a missing-authentication candidate), and ~200 Python sink APIs in the same categories (`subprocess`, `os.system`, python-nmap → COMMAND, `requests`/`httpx` → SSRF, `open`/`FileResponse` → PATH, built SQL strings passed to `execute`/`sqlalchemy.text` → SQL, `pickle`/`yaml.load` → DESERIALIZATION). See [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail) for details.
 - **Kotlin**: parsed with tree-sitter (cotcha-trail 0.8.0) for structure, calls and the same sink rules as Java. Calls between Java and Kotlin are linked, so a Java Spring controller that calls a Kotlin service reaches the Kotlin sink. Kotlin Spring controllers (`@RestController` + `@GetMapping`…) are entry points too (cotcha-trail 0.9.0).
+- **WebFlux functional routers** (Java and Kotlin, cotcha-trail 0.10.0): `RouterFunctions.route(GET("/x"), handler::get)`, `.andRoute`, `nest(path("/api"), …)`, the `route().GET(…).path("/v2", b -> …)` builder and the Kotlin `router { }` / `coRouter { }` DSL give HTTP entry points routed to the handler method (a method reference, or the first call in a lambda).
 
 - **Source-only analysis, no library jars**: types are inferred from import statements and variable/field declarations, falling back to the JavaParser symbol solver. Repositories can be analyzed without building them.
 - **Structure extraction**: builds the file → class → method hierarchy and inheritance links (interface method → implementing method).
@@ -209,6 +210,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 14 | Python (FastAPI) analysis (cotcha-trail 0.2.0): language detection, FastAPI entry points with `Depends`, Python sinks; the project language is set from the detected languages | ✅ Done |
 | 15 | Kotlin and Java ↔ Kotlin call links (cotcha-trail 0.8.0): Kotlin structure, calls and sinks; Java controllers that call Kotlin services reach the Kotlin sinks; `grep_code` also searches `.kt` | ✅ Done |
 | 15-1 | Kotlin Spring controllers as entry points (cotcha-trail 0.9.0) | ✅ Done |
+| 15-2 | WebFlux functional routers as entry points, Java (`RouterFunctions.route`, `route()` builder, `nest`/`path`) and Kotlin (`router { }`/`coRouter { }`) (cotcha-trail 0.10.0) | ✅ Done |
 
 ---
 
@@ -753,6 +755,7 @@ cotcha-net는 저장소 소스코드를 정적으로 파싱해 **코드 그래�
 - **언어**: Java/Spring 과 Python/FastAPI 백엔드, 프론트엔드 JS/TS/Vue/HTML(줄 단위 점검). 코드 그래프를 만들 때 파일 확장자로 언어를 판별하고 프로젝트의 `language` 를 바꾼다(`java`, `python`, `java,python`).
 - **Python/FastAPI**: tree-sitter 로 파싱한다. `@app.get`·`@router.post` 라우트(`APIRouter(prefix=)`, `include_router(prefix=)` 경로 포함), 진입점마다 `Depends(...)` 의존 함수(API 의 `dependencies`, 없으면 인증 누락 후보), 같은 분류의 파이썬 위험 API 약 200개(`subprocess`, `os.system`, python-nmap → COMMAND, `requests`·`httpx` → SSRF, `open`·`FileResponse` → PATH, 조립한 SQL 문자열을 `execute`·`sqlalchemy.text` 에 넘김 → SQL, `pickle`·`yaml.load` → DESERIALIZATION). 자세한 내용은 [cotcha-trail](https://github.com/yeomyaloo/cotcha-trail).
 - **Kotlin**: tree-sitter 로 파싱해 구조·호출·Java 와 같은 위험 지점 규칙을 본다(cotcha-trail 0.8.0). Java ↔ Kotlin 호출을 이어서, Kotlin 서비스를 부르는 Java Spring 컨트롤러에서 Kotlin 위험 지점까지 경로가 생긴다. Kotlin 으로 쓴 Spring 컨트롤러(`@RestController` + `@GetMapping`…)도 진입점으로 찾는다(cotcha-trail 0.9.0).
+- **WebFlux 함수형 라우터** (Java·Kotlin, cotcha-trail 0.10.0): `RouterFunctions.route(GET("/x"), handler::get)`, `.andRoute`, `nest(path("/api"), …)`, `route().GET(…).path("/v2", b -> …)` 빌더, Kotlin `router { }`·`coRouter { }` DSL 에서 HTTP 진입점을 찾아 처리 메서드(메서드 참조, 또는 람다 안 첫 호출)로 잇는다.
 
 - **라이브러리 jar 없이 소스만으로 분석**: import 문과 변수·필드 선언으로 타입을 알아내고, 안 되면 JavaParser symbol solver에 맡긴다. 빌드하지 않은 저장소도 바로 분석할 수 있다.
 - **구조 추출**: 파일 → 클래스 → 메서드 계층과 상속 관계(인터페이스 메서드 → 구현 메서드)를 만든다.
@@ -882,6 +885,7 @@ cotcha-net는 저장소 소스코드를 정적으로 파싱해 **코드 그래�
 | 14 | Python(FastAPI) 분석 (cotcha-trail 0.2.0): 언어 자동 판별, `Depends` 를 포함한 FastAPI 진입점, 파이썬 위험 지점. 프로젝트 언어를 판별 결과로 기록 | ✅ 완료 |
 | 15 | Kotlin 과 Java ↔ Kotlin 호출 연결 (cotcha-trail 0.8.0): Kotlin 구조·호출·위험 지점, Kotlin 서비스를 부르는 Java 컨트롤러에서 Kotlin 위험 지점까지 경로, `grep_code` 가 `.kt` 도 찾음 | ✅ 완료 |
 | 15-1 | Kotlin 으로 쓴 Spring 컨트롤러를 진입점으로 (cotcha-trail 0.9.0) | ✅ 완료 |
+| 15-2 | WebFlux 함수형 라우터를 진입점으로: Java(`RouterFunctions.route`, `route()` 빌더, `nest`·`path`), Kotlin(`router { }`·`coRouter { }`) (cotcha-trail 0.10.0) | ✅ 완료 |
 
 ---
 
