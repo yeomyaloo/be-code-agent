@@ -16,6 +16,7 @@ import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlock;
 import com.codeagent.agent.tool.AgentTool;
 import com.codeagent.agent.tool.ToolContext;
+import com.codeagent.agent.tool.ToolArgsCheck;
 import com.codeagent.agent.tool.ToolInput;
 import com.codeagent.agent.tool.ToolInputException;
 import com.codeagent.analysisgraph.AnalysisEvents;
@@ -174,6 +175,8 @@ public class AgentLoop {
             if (input == null) {
                 throw new ToolInputException("도구 입력이 JSON 객체가 아님");
             }
+            // 모르는 인자(오타)·빠진 필수 인자·허용하지 않는 값을 한 번에 알려서 한 번에 고쳐 부르게 한다
+            ToolArgsCheck.validate(tool, input);
             result = tool.execute(new ToolInput(input), context);
         } catch (ToolInputException e) {
             result = "입력 오류: " + e.getMessage();

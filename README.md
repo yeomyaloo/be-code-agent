@@ -215,6 +215,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 15-3 | Constant paths (`@GetMapping(Paths.USERS)`, `GET(BASE + "/x")`, Kotlin `const val` and templates) resolve to their values in entry point names (cotcha-trail 0.11.0) | ✅ Done |
 | 16 | Flask and Django (cotcha-trail 0.12.0): Flask routes, blueprints, `add_url_rule`, Flask-RESTful; Django `urlpatterns`, `include`, class views, DRF routers and `@action`; entry points list auth hints (`login_required`, `permission_classes`, `LoginRequiredMixin`, `before_request`); SSTI, Django redirect/`mark_safe`/`RawSQL` sinks | ✅ Done |
 | 16-1 | Django `ROOT_URLCONF`: entry points start from the settings' root urls, so unconnected urls files are left out (cotcha-trail 0.13.0); also when it comes from environment variables or `.env` files (0.14.0), docker-compose `environment:`/`env_file:` and Dockerfile `ENV` (0.15.0), Kubernetes manifests and Kustomize (0.16.0) | ✅ Done |
+| 16-2 | Friendlier tool input errors: the agent's tool arguments are checked against the schema before running; unknown names get a suggestion and all problems are listed at once | ✅ Done |
 
 ---
 
@@ -894,6 +895,7 @@ cotcha-net는 저장소 소스코드를 정적으로 파싱해 **코드 그래�
 | 15-3 | 상수 경로(`@GetMapping(Paths.USERS)`, `GET(BASE + "/x")`, Kotlin `const val`·템플릿)를 진입점 이름에서 값으로 풂 (cotcha-trail 0.11.0) | ✅ 완료 |
 | 16 | Flask·Django (cotcha-trail 0.12.0): Flask 라우트·블루프린트·`add_url_rule`·Flask-RESTful, Django `urlpatterns`·`include`·클래스 뷰·DRF 라우터·`@action`. 진입점에 인증 단서(`login_required`, `permission_classes`, `LoginRequiredMixin`, `before_request`). SSTI, Django 리다이렉트·`mark_safe`·`RawSQL` 위험 지점 | ✅ 완료 |
 | 16-1 | Django `ROOT_URLCONF`: settings 의 루트 urls 에서 시작해서 연결되지 않은 urls 파일은 뺀다 (cotcha-trail 0.13.0). 환경 변수·`.env` 파일로 정해도 읽는다 (0.14.0). docker-compose `environment:`·`env_file:`, Dockerfile `ENV` 도 (0.15.0). Kubernetes 매니페스트·Kustomize 도 (0.16.0) | ✅ 완료 |
+| 16-2 | 도구 입력 오류 안내: 에이전트의 도구 인자를 실행 전에 스키마와 맞춰 보고, 모르는 이름에는 비슷한 인자를 제안하고, 문제를 한 번에 보여줌 | ✅ 완료 |
 
 ---
 
