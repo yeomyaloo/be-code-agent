@@ -211,6 +211,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 15 | Kotlin and Java ↔ Kotlin call links (cotcha-trail 0.8.0): Kotlin structure, calls and sinks; Java controllers that call Kotlin services reach the Kotlin sinks; `grep_code` also searches `.kt` | ✅ Done |
 | 15-1 | Kotlin Spring controllers as entry points (cotcha-trail 0.9.0) | ✅ Done |
 | 15-2 | WebFlux functional routers as entry points, Java (`RouterFunctions.route`, `route()` builder, `nest`/`path`) and Kotlin (`router { }`/`coRouter { }`) (cotcha-trail 0.10.0) | ✅ Done |
+| 15-3 | Constant paths (`@GetMapping(Paths.USERS)`, `GET(BASE + "/x")`, Kotlin `const val` and templates) resolve to their values in entry point names (cotcha-trail 0.11.0) | ✅ Done |
 
 ---
 
@@ -886,6 +887,7 @@ cotcha-net는 저장소 소스코드를 정적으로 파싱해 **코드 그래�
 | 15 | Kotlin 과 Java ↔ Kotlin 호출 연결 (cotcha-trail 0.8.0): Kotlin 구조·호출·위험 지점, Kotlin 서비스를 부르는 Java 컨트롤러에서 Kotlin 위험 지점까지 경로, `grep_code` 가 `.kt` 도 찾음 | ✅ 완료 |
 | 15-1 | Kotlin 으로 쓴 Spring 컨트롤러를 진입점으로 (cotcha-trail 0.9.0) | ✅ 완료 |
 | 15-2 | WebFlux 함수형 라우터를 진입점으로: Java(`RouterFunctions.route`, `route()` 빌더, `nest`·`path`), Kotlin(`router { }`·`coRouter { }`) (cotcha-trail 0.10.0) | ✅ 완료 |
+| 15-3 | 상수 경로(`@GetMapping(Paths.USERS)`, `GET(BASE + "/x")`, Kotlin `const val`·템플릿)를 진입점 이름에서 값으로 풂 (cotcha-trail 0.11.0) | ✅ 완료 |
 
 ---
 
