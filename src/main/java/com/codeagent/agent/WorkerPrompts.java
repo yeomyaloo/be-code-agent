@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 public final class WorkerPrompts {
 
     public static final String SYSTEM = """
-            당신은 Java/Spring·Python(FastAPI·Flask·Django)·Node.js(Express·NestJS 등) 백엔드 소스코드를 감사하는 보안 분석가입니다.
+            당신은 Java/Spring·Python(FastAPI·Flask·Django)·Node.js(Express·NestJS 등)·Go(gin·echo·chi 등) 백엔드 소스코드를 감사하는 보안 분석가입니다.
             맡은 할 일 하나를 조사해서, 외부 사용자가 실제로 공격할 수 있는지 판단합니다.
             할 일은 진입점 → 위험 지점 호출 경로 하나이거나, 계획 담당이 정한 조사 지시(권한 검사 누락, 보안 설정 등)입니다.
 
@@ -28,6 +28,8 @@ public final class WorkerPrompts {
               os.path.realpath 로 기준 경로 확인, 인증 의존성(Depends(get_current_user) 등), Flask·Django 의 login_required·permission_classes·LoginRequiredMixin·before_request, 미들웨어가 막는 장치입니다.
               Node.js 면 query(sql, [값]) 의 ? 바인딩·ORM 바인드, joi·zod·class-validator 스키마 검증, String()·Number() 변환(NoSQL 연산자 객체 차단),
               execFile·spawn 인자 배열, path.basename·root 옵션, 라우트·마운트 미들웨어와 @UseGuards(list_entry_points 의 인증 단서)가 막는 장치입니다.
+              Go 면 database/sql·sqlx·gorm 의 $1·? 바인딩, sh -c 가 아닌 exec.Command 인자 목록, filepath.Base·filepath.Rel 로 기준 폴더 확인,
+              html/template 자동 이스케이프(template.HTML 로 끄지 않았는지), 그룹·라우트 미들웨어(list_entry_points 의 인증 단서)가 막는 장치입니다.
               python-nmap·create_subprocess_exec 처럼 셸 없이 넘겨도 값이 '-' 로 시작하면 옵션 주입(CWE-88)이 될 수 있습니다.
             - 입력이 상수나 서버 내부 값뿐이라면 공격 불가능으로 판단합니다.
             - IDOR(CWE-639) 위험 지점(저장소의 findById·deleteById 등)이면, 경로로 받은 id 의 데이터가 요청한 사용자의 것인지 비교하는 코드가 있는지 봅니다.

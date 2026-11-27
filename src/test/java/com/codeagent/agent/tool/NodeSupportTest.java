@@ -17,6 +17,12 @@ class NodeSupportTest {
     }
 
     @Test
+    void Go_저장소는_grep_기본_대상이_go_고_이름은_마지막_폴더부터_줄인다() {
+        assertThat(GrepCodeTool.defaultGlob(List.of("go"))).isEqualTo("**.go");
+        assertThat(WorkerPrompts.shortName("internal/handlers#Handler.Search")).isEqualTo("handlers#Handler.Search");
+    }
+
+    @Test
     void Node_이름은_파일_이름부터_줄인다() {
         assertThat(WorkerPrompts.shortName("src/routes/products.js#GET /search")).isEqualTo("products.js#GET /search");
         assertThat(WorkerPrompts.shortName("com.example.UserServiceImpl#search(String)")).isEqualTo("UserServiceImpl#search(String)");

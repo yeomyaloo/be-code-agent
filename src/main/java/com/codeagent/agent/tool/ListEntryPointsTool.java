@@ -29,8 +29,8 @@ public class ListEntryPointsTool implements AgentTool {
     @Override
     public String description() {
         return "HTTP 진입점 전체 목록 (메서드, 경로, 처리 메서드, 위치): Spring MVC 컨트롤러, FastAPI 라우트(라우터 prefix 포함), Flask·Django, "
-                + "Node.js(Express·Koa·Fastify 라우터와 app.use 마운트 경로, NestJS @Controller, Next.js API 라우트). "
-                + "Flask·Django·Node.js 는 인증 단서(login_required, 라우트·마운트 미들웨어, @UseGuards 등)를 보여준다. 단서가 없으면 전역 설정(app.use(auth) 등)을 확인한다. "
+                + "Node.js(Express·Koa·Fastify 라우터와 app.use 마운트 경로, NestJS @Controller, Next.js API 라우트), Go(net/http·gin·echo·chi·gorilla/mux·fiber 그룹·마운트 경로). "
+                + "Flask·Django·Node.js·Go 는 인증 단서(login_required, 라우트·마운트 미들웨어, @UseGuards 등)를 보여준다. 단서가 없으면 전역 설정(app.use(auth) 등)을 확인한다. "
                 + "FastAPI 는 Depends(...) 의존 함수(인증 확인 등)도 보여준다. Depends 가 없는 라우트는 인증 누락 후보다. "
                 + "위험 지점까지 이어지지 않는 진입점도 나온다. 경로 변수({id})로 데이터를 조회·수정·삭제하는 API 는 "
                 + "소유자 확인 누락(IDOR, CWE-639) 같은 권한 문제를 점검할 후보다.";
