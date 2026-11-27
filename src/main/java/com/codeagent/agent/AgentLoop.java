@@ -176,6 +176,7 @@ public class AgentLoop {
                 throw new ToolInputException("도구 입력이 JSON 객체가 아님");
             }
             // 모르는 인자(오타)·빠진 필수 인자·허용하지 않는 값을 한 번에 알려서 한 번에 고쳐 부르게 한다
+            input = ToolArgsCheck.normalize(tool, input);
             ToolArgsCheck.validate(tool, input);
             result = tool.execute(new ToolInput(input), context);
         } catch (ToolInputException e) {

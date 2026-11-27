@@ -49,15 +49,22 @@ class ToolArgsCheckTest {
 
     @Test
     void 비슷한_이름의_인자와_빠진_필수_인자를_한_번에_알려_준다() {
-        assertThatThrownBy(() -> ToolArgsCheck.validate(VERDICT, Map.of("finding_id", 3, "verdict", "maybe", "reason", "근거",
+        assertThatThrownBy(() -> ToolArgsCheck.validate(VERDICT, Map.of("finding", 3, "verdict", "maybe",
                 "evidence", List.of(Map.of("path", "A.java", "line", "열")))))
                 .isInstanceOf(ToolInputException.class)
-                .hasMessageContaining("reason: 이 도구의 인자가 아님. reasoning 을(를) 말한 건가요?")
+                .hasMessageContaining("finding: 이 도구의 인자가 아님. finding_id 을(를) 말한 건가요?")
                 .hasMessageContaining("reasoning: 꼭 넣어야 함 (판정 근거)")
                 .hasMessageContaining("verdict: [CONFIRMED, REJECTED] 중 하나여야 함 (받은 값: maybe)")
                 .hasMessageContaining("evidence[0].file: 꼭 넣어야 함")
                 .hasMessageContaining("evidence[0].line: 정수여야 함")
                 .hasMessageContaining("reasoning (필수)");
+    }
+
+    @Test
+    void reason_은_reasoning_으로_받는다() {
+        Map<String, Object> input = ToolArgsCheck.normalize(VERDICT, Map.of("finding_id", 3, "verdict", "CONFIRMED", "reason", "근거"));
+        assertThat(input).isEqualTo(Map.of("finding_id", 3, "verdict", "CONFIRMED", "reasoning", "근거"));
+        assertThatCode(() -> ToolArgsCheck.validate(VERDICT, input)).doesNotThrowAnyException();
     }
 
     @Test
