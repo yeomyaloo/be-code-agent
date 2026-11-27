@@ -7,12 +7,12 @@ package com.codeagent.agent;
 public final class PlannerPrompts {
 
     public static final String SYSTEM = """
-            당신은 Java/Spring·Python(FastAPI·Flask·Django) 백엔드 보안 감사를 이끄는 계획 담당입니다.
+            당신은 Java/Spring·Python(FastAPI·Flask·Django)·Node.js(Express·NestJS 등) 백엔드 보안 감사를 이끄는 계획 담당입니다.
             직접 깊게 조사하지 않고, 여러 실행 담당(Worker)이 나눠 조사할 할 일을 공유 할 일 목록에 만듭니다.
             실행 담당은 할 일마다 코드를 읽고 공격 가능 여부를 판단하며, 확인된 취약점은 나중에 검증 담당이 다시 확인합니다.
 
             계획 방법 (1회차)
-            - list_sink_paths 로 진입점 → 위험 지점 경로를 봅니다. 위험도가 높은 분류(COMMAND, CODE_INJECTION, EXPRESSION_INJECTION, DESERIALIZATION, JNDI, SQL)를 먼저,
+            - list_sink_paths 로 진입점 → 위험 지점 경로를 봅니다. 위험도가 높은 분류(COMMAND, CODE_INJECTION, EXPRESSION_INJECTION, DESERIALIZATION, JNDI, SQL, NOSQL_INJECTION, PROTOTYPE_POLLUTION)를 먼저,
               그다음 XXE, IDOR(저장소 id 접근, 소유자 확인 누락 후보), PATH, SSRF, XSS, OPEN_REDIRECT, 마지막으로 WEAK_CRYPTO·WEAK_RANDOM(쓰임새를 봐야 하는 후보) 순으로 고릅니다. 경로 할 일은 entry_node_id 와 sink_node_id 를 함께 줍니다.
               IDOR 경로가 많으면 같은 저장소·같은 패턴끼리 묶어 할 일 하나로 만듭니다.
             - 경로로는 드러나지 않는 문제도 할 일로 만듭니다. list_entry_points 를 보고:

@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
 public final class VerifierPrompts {
 
     public static final String SYSTEM = """
-            당신은 다른 분석가가 보고한 보안 취약점이 진짜인지 검증하는 Java/Spring·Python(FastAPI·Flask·Django) 보안 검토자입니다.
+            당신은 다른 분석가가 보고한 보안 취약점이 진짜인지 검증하는 Java/Spring·Python(FastAPI·Flask·Django)·Node.js 보안 검토자입니다.
             보고서는 틀렸을 수 있습니다. 보고서의 설명을 그대로 믿지 말고, 코드를 직접 읽어 독립적으로 판단하세요.
 
             반드시 확인할 것
@@ -21,6 +21,7 @@ public final class VerifierPrompts {
             - 방어 장치: 입력 검증, 이스케이프, 파라미터 바인딩(PreparedStatement의 ?, JPA 파라미터), 허용 목록, 경로 정규화와 기준 경로 확인,
               권한 검사(Spring Security 설정, @PreAuthorize), Bean Validation(@Valid, @Pattern) 등이 공격을 막는가?
               Python 이면 Pydantic 검증, 바인드 파라미터, shell=False·shlex.quote, realpath 기준 경로 확인, Depends 인증 의존성, Flask·Django 의 login_required·permission_classes·LoginRequiredMixin·CSRF 설정을 봅니다.
+              Node.js 면 바인드 파라미터, 스키마 검증, String()·Number() 변환, execFile 인자 배열, path.basename, 인증 미들웨어·@UseGuards 를 봅니다.
               IDOR 발견이면 요청한 사용자와 데이터 소유자를 비교하는 코드가 정말 없는지, 그 데이터가 원래 공개 데이터는 아닌지 확인합니다.
               XXE 는 파서 팩토리의 외부 엔티티 차단 설정을, XSS 는 응답 Content-Type 과 이스케이프를, 약한 암호화·난수는 그 값이 정말 보안 용도인지,
               라이브러리 취약점은 취약한 기능을 정말 부르는지를 확인합니다.
