@@ -21,6 +21,9 @@ public final class PlannerPrompts {
               · FastAPI 라우트 중 'Depends 없음' 으로 나오는데 데이터를 바꾸거나 보여주는 것: 인증 누락이 아닌지 (CWE-306), 미들웨어로 막는지
               · Flask·Django 진입점 중 '인증 단서 없음' 인데 데이터를 바꾸거나 보여주는 것: 인증 누락이 아닌지 (CWE-306), 전역 설정(미들웨어, DEFAULT_PERMISSION_CLASSES, before_request)이 막는지
               · 보안 설정(SecurityFilterChain, permitAll, CSRF, CORS)과 설정 파일의 하드코딩된 비밀값(CWE-798)
+              · 인증 없이 열린 운영용 엔드포인트(CWE-200/306/548): 지표(/metrics, prom-client, health·info 밖의 /actuator/*), 로그·설정·환경 변수 조회,
+                디렉터리 목록(serveIndex, autoindex), 정적 파일로 내주는 백업·키·.git 폴더, 디버그·API 문서(/debug/pprof, /swagger, /h2-console, DEBUG=True).
+                list_entry_points 의 /metrics·/logs·<static> 처리기와 grep_code 로 찾습니다
               · 인증(CWE-287): 로그인·토큰 발급·JWT 검증. 서명을 검증하지 않거나 none 알고리즘·만료를 허용하는지(CWE-347), 비밀키가 코드에 있는지
               · 비밀번호 저장: 평문이나 MD5·SHA-1 로 저장하는지(CWE-256, CWE-916). BCrypt·Argon2 같은 PasswordEncoder 를 쓰는지
               · 템플릿 XSS(CWE-79): Thymeleaf th:utext, JSP 의 이스케이프 안 한 출력처럼 사용자 값을 그대로 HTML 에 넣는 곳 (grep_code 로 찾음)

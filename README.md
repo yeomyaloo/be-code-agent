@@ -227,6 +227,7 @@ The architecture follows the dual graph + Planner/Worker design of [ARTEX](https
 | 16-6 | PHP backends (cotcha-trail 0.20.0): Laravel, Symfony, Slim, CodeIgniter and plain-script entry points with prefixes and `guards`, calls through PHP's declared types, interfaces and facades, PHP sinks; prompts cover PHP defenses and `grep_code` defaults to `.php` for PHP projects | ✅ Done |
 | 16-7 | Ruby backends (cotcha-trail 0.21.0): Rails routes DSL and Sinatra entry points with `before_action`/`authenticate`/`before` guards, calls through `X.new` and instance variables, Ruby sinks; prompts cover Ruby defenses and `grep_code` defaults to `.rb` for Ruby projects | ✅ Done |
 | 16-8 | C# backends (cotcha-trail 0.22.0): ASP.NET Core controllers and Minimal APIs with `[Authorize]`/`RequireAuthorization` guards, calls through C#'s declared types and interfaces, C# sinks that leave out safe-by-default APIs; prompts cover .NET defenses and `grep_code` defaults to `.cs` for C# projects | ✅ Done |
+| 16-9 | Node.js on a real app (cotcha-trail 0.23.0–0.24.0, OWASP Juice Shop): handler factories, path-scoped middleware as guards, finale-rest generated routes, `app.use` static/terminal routes as entry points, middleware registration order. The planner and worker now check operational endpoints (metrics, logs, config, directory listings, backups/keys, debug pages and API docs) for missing authentication (CWE-200/306/548) | ✅ Done |
 
 ---
 
@@ -918,6 +919,7 @@ cotcha-net는 저장소 소스코드를 정적으로 파싱해 **코드 그래�
 | 16-6 | PHP 백엔드 (cotcha-trail 0.20.0): Laravel, Symfony, Slim, CodeIgniter, 순수 스크립트 진입점과 접두사·`guards`, PHP 에 적힌 타입·인터페이스·파사드로 호출 잇기, PHP 위험 지점. 프롬프트에 PHP 방어 장치, PHP 프로젝트의 `grep_code` 기본 대상은 `.php` | ✅ 완료 |
 | 16-7 | Ruby 백엔드 (cotcha-trail 0.21.0): Rails 라우트 DSL·Sinatra 진입점과 `before_action`·`authenticate`·`before` guards, `X.new`·인스턴스 변수로 호출 잇기, Ruby 위험 지점. 프롬프트에 Ruby 방어 장치, Ruby 프로젝트의 `grep_code` 기본 대상은 `.rb` | ✅ 완료 |
 | 16-8 | C# 백엔드 (cotcha-trail 0.22.0): ASP.NET Core 컨트롤러·Minimal API 와 `[Authorize]`·`RequireAuthorization` guards, C# 에 적힌 타입·인터페이스로 호출 잇기, 기본으로 안전한 API 는 뺀 C# 위험 지점. 프롬프트에 .NET 방어 장치, C# 프로젝트의 `grep_code` 기본 대상은 `.cs` | ✅ 완료 |
+| 16-9 | 실제 앱으로 본 Node.js (cotcha-trail 0.23.0~0.24.0, OWASP Juice Shop): 처리기를 만드는 함수, 경로 지정 미들웨어를 guards 로, finale-rest 가 만드는 라우트, `app.use` 정적·끝점 경로를 진입점으로, 미들웨어 등록 순서. 계획·실행 담당이 운영용 엔드포인트(지표, 로그, 설정, 디렉터리 목록, 백업·키, 디버그 페이지·API 문서)의 인증 누락(CWE-200/306/548)을 본다 | ✅ 완료 |
 
 ---
 
