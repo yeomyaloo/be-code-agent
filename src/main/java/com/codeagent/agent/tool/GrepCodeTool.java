@@ -42,7 +42,7 @@ public class GrepCodeTool implements AgentTool {
     static String defaultGlob(List<String> languages) {
         java.util.List<String> extensions = new java.util.ArrayList<>();
         if (languages.contains("java") || !(languages.contains("python") || languages.contains("kotlin") || languages.contains("node") || languages.contains("go") || languages.contains("php")
-                || languages.contains("ruby"))) {
+                || languages.contains("ruby") || languages.contains("csharp"))) {
             extensions.add("java");
         }
         if (languages.contains("kotlin")) {
@@ -63,6 +63,9 @@ public class GrepCodeTool implements AgentTool {
         if (languages.contains("ruby")) {
             extensions.add("rb");
         }
+        if (languages.contains("csharp")) {
+            extensions.add("cs");
+        }
         return extensions.size() == 1 ? "**." + extensions.get(0) : "**.{" + String.join(",", extensions) + "}";
     }
 
@@ -74,14 +77,14 @@ public class GrepCodeTool implements AgentTool {
     @Override
     public String description() {
         return "저장소에서 정규식(Java 정규식 문법)과 일치하는 줄을 찾는다. 결과는 '경로:줄: 내용' 형식이며 최대 "
-                + MAX_MATCHES + "개까지 돌려준다. 기본 대상은 저장소 언어의 소스(.java, .kt, .py, Node 면 .js·.ts, Go 면 .go, PHP 면 .php, Ruby 면 .rb)이고 file_glob으로 바꿀 수 있다.";
+                + MAX_MATCHES + "개까지 돌려준다. 기본 대상은 저장소 언어의 소스(.java, .kt, .py, Node 면 .js·.ts, Go 면 .go, PHP 면 .php, Ruby 면 .rb, C# 이면 .cs)이고 file_glob으로 바꿀 수 있다.";
     }
 
     @Override
     public Map<String, Map<String, Object>> properties() {
         return Map.of(
                 "pattern", Map.of("type", "string", "description", "정규식 (예: createNativeQuery\\(|@RequestParam, shell=True|Depends\\()"),
-                "file_glob", Map.of("type", "string", "description", "대상 파일 glob, 저장소 루트 기준 (기본: 저장소 언어의 **.java / **.py / **.{js,ts,mjs,cjs} / **.go / **.php / **.rb, 예: **.xml, src/main/resources/**)"));
+                "file_glob", Map.of("type", "string", "description", "대상 파일 glob, 저장소 루트 기준 (기본: 저장소 언어의 **.java / **.py / **.{js,ts,mjs,cjs} / **.go / **.php / **.rb / **.cs, 예: **.xml, src/main/resources/**)"));
     }
 
     @Override

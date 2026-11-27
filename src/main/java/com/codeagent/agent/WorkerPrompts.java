@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 public final class WorkerPrompts {
 
     public static final String SYSTEM = """
-            당신은 Java/Spring·Python(FastAPI·Flask·Django)·Node.js(Express·NestJS 등)·Go(gin·echo·chi 등)·PHP(Laravel·Symfony 등)·Ruby(Rails·Sinatra) 백엔드 소스코드를 감사하는 보안 분석가입니다.
+            당신은 Java/Spring·Python(FastAPI·Flask·Django)·Node.js(Express·NestJS 등)·Go(gin·echo·chi 등)·PHP(Laravel·Symfony 등)·Ruby(Rails·Sinatra)·C#(ASP.NET Core) 백엔드 소스코드를 감사하는 보안 분석가입니다.
             맡은 할 일 하나를 조사해서, 외부 사용자가 실제로 공격할 수 있는지 판단합니다.
             할 일은 진입점 → 위험 지점 호출 경로 하나이거나, 계획 담당이 정한 조사 지시(권한 검사 누락, 보안 설정 등)입니다.
 
@@ -34,6 +34,8 @@ public final class WorkerPrompts {
               Laravel middleware·Symfony IsGranted(list_entry_points 의 인증 단서)가 막는 장치입니다. Laravel 쿠키는 기본으로 암호화됩니다.
               Ruby 면 where('x = ?', v)·해시 조건, 인자를 나눈 system('cmd', arg), File.basename, ERB 자동 이스케이프(html_safe·raw 로 끄지 않았는지),
               Rails 7 의 redirect_to 외부 호스트 차단(allow_other_host: true 면 꺼짐), before_action·skip_before_action 이 막는 장치입니다.
+              C# 이면 FromSqlInterpolated·SqlParameter·Dapper 매개변수, 셸 없는 ProcessStartInfo, Path.GetFileName·GetFullPath 기준 폴더 확인, HtmlEncoder·Razor 인코딩,
+              LocalRedirect·Url.IsLocalUrl, [Authorize]·RequireAuthorization 과 [AllowAnonymous] 가 막는 장치입니다.
               python-nmap·create_subprocess_exec 처럼 셸 없이 넘겨도 값이 '-' 로 시작하면 옵션 주입(CWE-88)이 될 수 있습니다.
             - 입력이 상수나 서버 내부 값뿐이라면 공격 불가능으로 판단합니다.
             - IDOR(CWE-639) 위험 지점(저장소의 findById·deleteById 등)이면, 경로로 받은 id 의 데이터가 요청한 사용자의 것인지 비교하는 코드가 있는지 봅니다.
@@ -152,7 +154,7 @@ public final class WorkerPrompts {
             return parts.length <= 2 ? qualifiedName : parts[parts.length - 2] + "." + parts[parts.length - 1];
         }
         String owner = hash < 0 ? qualifiedName : qualifiedName.substring(0, hash);
-        if (owner.contains("/") || owner.contains("\\") || owner.contains("::")) {
+        if (owner.contains("/") || owner.contains("\\") || owner.contains("::") || owner.endsWith(".cs")) {
             // Node·Go 는 파일·폴더, PHP 는 namespace, Ruby 는 module 을 뗀다 (Api::ProductsController#search → ProductsController#search)
             int colons = owner.lastIndexOf("::");
             int cut = Math.max(Math.max(owner.lastIndexOf('/'), owner.lastIndexOf('\\')), colons < 0 ? -1 : colons + 1);

@@ -36,6 +36,13 @@ class NodeSupportTest {
     }
 
     @Test
+    void CSharp_저장소는_grep_기본_대상이_cs_고_이름은_클래스나_파일부터_줄인다() {
+        assertThat(GrepCodeTool.defaultGlob(List.of("csharp"))).isEqualTo("**.cs");
+        assertThat(WorkerPrompts.shortName("CsShop.Controllers.AuthController#Login")).isEqualTo("AuthController#Login");
+        assertThat(WorkerPrompts.shortName("Program.cs#GET /health")).isEqualTo("Program.cs#GET /health");
+    }
+
+    @Test
     void Node_이름은_파일_이름부터_줄인다() {
         assertThat(WorkerPrompts.shortName("src/routes/products.js#GET /search")).isEqualTo("products.js#GET /search");
         assertThat(WorkerPrompts.shortName("com.example.UserServiceImpl#search(String)")).isEqualTo("UserServiceImpl#search(String)");

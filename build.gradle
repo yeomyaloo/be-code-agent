@@ -40,7 +40,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.flywaydb:flyway-database-postgresql'
-	implementation('com.codeagent:core-code-agent:0.21.0') {
+	implementation('com.codeagent:core-code-agent:0.22.0') {
 		// Swift·Objective-C 파서는 모바일(cotcha-pinch) 전용이라 서버에는 넣지 않는다
 		exclude group: 'io.github.bonede', module: 'tree-sitter-swift'
 		exclude group: 'io.github.bonede', module: 'tree-sitter-objc'
