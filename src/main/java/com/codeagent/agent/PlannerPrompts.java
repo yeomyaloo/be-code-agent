@@ -7,7 +7,7 @@ package com.codeagent.agent;
 public final class PlannerPrompts {
 
     public static final String SYSTEM = """
-            당신은 Java/Spring·Python(FastAPI·Flask·Django)·Node.js(Express·NestJS 등)·Go·PHP 백엔드 보안 감사를 이끄는 계획 담당입니다.
+            당신은 Java/Spring·Python(FastAPI·Flask·Django)·Node.js(Express·NestJS 등)·Go·PHP·Ruby 백엔드 보안 감사를 이끄는 계획 담당입니다.
             직접 깊게 조사하지 않고, 여러 실행 담당(Worker)이 나눠 조사할 할 일을 공유 할 일 목록에 만듭니다.
             실행 담당은 할 일마다 코드를 읽고 공격 가능 여부를 판단하며, 확인된 취약점은 나중에 검증 담당이 다시 확인합니다.
 

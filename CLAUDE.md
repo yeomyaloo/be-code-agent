@@ -22,7 +22,7 @@ python benchmark/run.py --runs 3                 # 실제 LLM 으로 벤치마�
 
 | 패키지 | 역할 |
 |---|---|
-| `codegraph` | 코드 그래프 저장·조회(Java/Spring, Kotlin, Python/FastAPI·Flask·Django, Node.js·Go·PHP 백엔드, 프론트엔드. Java ↔ Kotlin 호출은 엔진이 잇는다). 색인할 때 판별한 언어로 `Project.language` 를 바꾼다. 파싱은 공용 라이브러리 cotcha-trail(`com.codeagent.core`)의 `CodeGraphEngine.analyze()`, `ingest/CodeGraphIndexer` 가 그 결과를 DB 에 옮기는 어댑터, `query/` 조회 |
+| `codegraph` | 코드 그래프 저장·조회(Java/Spring, Kotlin, Python/FastAPI·Flask·Django, Node.js·Go·PHP·Ruby 백엔드, 프론트엔드. Java ↔ Kotlin 호출은 엔진이 잇는다). 색인할 때 판별한 언어로 `Project.language` 를 바꾼다. 파싱은 공용 라이브러리 cotcha-trail(`com.codeagent.core`)의 `CodeGraphEngine.analyze()`, `ingest/CodeGraphIndexer` 가 그 결과를 DB 에 옮기는 어댑터, `query/` 조회 |
 | `analysisgraph` | 분석 그래프 (GOAL/INTENTION/FACT/FINDING), anchor, worker_trace, `AnalysisEvents`(SSE: 그래프·기록이 바뀌면 change, 작업이 끝나면 finished. 쓰기 경로에서 `events.changed()` 를 부른다) |
 | `agent` | `AgentLoop`(Claude 도구 호출 반복), 프롬프트(Planner·Worker·Verifier), `tool/` 도구 (Worker 8, Planner 전용 7, Verifier 판정 1) |
 | `dependency` | 빌드 파일(pom.xml, build.gradle, libs.versions.toml, gradle.lockfile)의 라이브러리 → OSV 알려진 취약점. OSV 요청엔 좌표·버전만 보낸다. 검사마다 `dependency_scan` 에 저장하고 지난 검사와 비교(`DependencyDiff`) |

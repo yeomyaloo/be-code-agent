@@ -29,6 +29,13 @@ class NodeSupportTest {
     }
 
     @Test
+    void Ruby_저장소는_grep_기본_대상이_rb_고_이름은_클래스부터_줄인다() {
+        assertThat(GrepCodeTool.defaultGlob(List.of("ruby"))).isEqualTo("**.rb");
+        assertThat(WorkerPrompts.shortName("Api::Admin::ToolsController#export")).isEqualTo("ToolsController#export");
+        assertThat(WorkerPrompts.shortName("ProductRepository#search")).isEqualTo("ProductRepository#search");
+    }
+
+    @Test
     void Node_이름은_파일_이름부터_줄인다() {
         assertThat(WorkerPrompts.shortName("src/routes/products.js#GET /search")).isEqualTo("products.js#GET /search");
         assertThat(WorkerPrompts.shortName("com.example.UserServiceImpl#search(String)")).isEqualTo("UserServiceImpl#search(String)");
