@@ -23,6 +23,12 @@ class NodeSupportTest {
     }
 
     @Test
+    void PHP_저장소는_grep_기본_대상이_php_고_이름은_클래스부터_줄인다() {
+        assertThat(GrepCodeTool.defaultGlob(List.of("php"))).isEqualTo("**.php");
+        assertThat(WorkerPrompts.shortName("App\\Http\\Controllers\\UserController#show")).isEqualTo("UserController#show");
+    }
+
+    @Test
     void Node_이름은_파일_이름부터_줄인다() {
         assertThat(WorkerPrompts.shortName("src/routes/products.js#GET /search")).isEqualTo("products.js#GET /search");
         assertThat(WorkerPrompts.shortName("com.example.UserServiceImpl#search(String)")).isEqualTo("UserServiceImpl#search(String)");

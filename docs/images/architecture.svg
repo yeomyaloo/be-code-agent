@@ -45,7 +45,7 @@
   <text x="78" y="254" class="h">① 저장소 받기 + 코드 그래프 생성</text>
   <rect x="336" y="240" width="96" height="20" rx="10" fill="#ffffff" stroke="#2f81f7"/>
   <text x="384" y="254" text-anchor="middle" class="m">LLM 사용 안 함</text>
-  <text x="78" y="282" class="t">Git 얕은 클론 → cotcha-trail 파싱(Java·Kotlin·Python·Node·Go) → 진입점 · 위험 지점(Java 54 + Python ~200 + Node + Go + JS/TS 27) · 호출 경로</text>
+  <text x="78" y="282" class="t">Git 얕은 클론 → cotcha-trail 파싱(Java·Kotlin·Python·Node·Go·PHP) → 진입점 · 위험 지점(Java 54 + Python ~200 + Node + Go + PHP + JS/TS 27) · 호출 경로</text>
 
   <line x1="160" y1="298" x2="160" y2="326" class="edge" marker-end="url(#arrow)"/>
   <text x="168" y="317" class="m">진입점 → 위험 지점 경로</text>
