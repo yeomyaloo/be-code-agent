@@ -55,6 +55,10 @@ public final class WorkerPrompts {
               URL(location.search·hash·쿼리 파라미터), postMessage, 다른 사용자가 쓴 내용이 담긴 API 응답이면 공격자가 조절할 수 있고, 상수·번역 문자열이면 아닙니다.
               · XSS: React 의 {값} 출력은 자동 이스케이프라 안전합니다. dangerouslySetInnerHTML·innerHTML·v-html 에 들어가는 값이 DOMPurify 같은 것으로 정리되는지 봅니다.
               · OPEN_REDIRECT: 이동할 주소를 허용 목록이나 같은 출처(/로 시작, //로 시작하지 않음)로 확인하는지 봅니다.
+            - OPEN_REDIRECT(CWE-601)는 백엔드·프론트엔드 모두 확인 방법을 봅니다. includes·indexOf 같은 부분 일치, 끝에 / 가 없는 startsWith, 앞뒤를 고정하지 않은
+              정규식은 우회됩니다(https://trusted.com.evil.net). 허용 목록이 있으면 항목도 읽고, 코드·프론트엔드가 실제로 링크하는 주소와 비교합니다.
+              더는 쓰지 않는 항목(옛 제휴·행사 도메인, 접은 서비스, 바꾼 주소)은 지금 그것을 가진 사람이 앱을 리다이렉터로 쓸 수 있으니,
+              우회되는 검사와 따로 목록 위치에 발견 하나로 기록합니다.
               · TOKEN_STORAGE: 로그인 토큰을 localStorage 에 두면 XSS 한 번에 털립니다. 위험도는 같은 앱에 XSS 가 있는지에 따라 달라집니다. HttpOnly 쿠키가 권장입니다.
               · POSTMESSAGE: message 이벤트에서 event.origin 을 확인하는지, postMessage 의 대상 출처가 '*' 인데 민감한 값을 보내는지 봅니다.
               · HARDCODED_SECRET: 원래 공개용인 키(Firebase 웹 apiKey, Stripe pk_, 지도 키 등 출처 제한이 걸린 키)는 비밀이 아닙니다. 서버 전용 키·비밀 토큰이면 취약합니다. 비밀값은 기록에 그대로 적지 말고 가립니다.
