@@ -55,6 +55,10 @@ public final class WorkerPrompts {
               URL(location.search·hash·쿼리 파라미터), postMessage, 다른 사용자가 쓴 내용이 담긴 API 응답이면 공격자가 조절할 수 있고, 상수·번역 문자열이면 아닙니다.
               · XSS: React 의 {값} 출력은 자동 이스케이프라 안전합니다. dangerouslySetInnerHTML·innerHTML·v-html 에 들어가는 값이 DOMPurify 같은 것으로 정리되는지 봅니다.
               · OPEN_REDIRECT: 이동할 주소를 허용 목록이나 같은 출처(/로 시작, //로 시작하지 않음)로 확인하는지 봅니다.
+            - passkey(WebAuthn)·OTP·OAuth 같은 인증 단계는 처리기를 끝까지 읽습니다. 등록은 자격 증명을 저장할 사용자를 요청 본문이 아니라 세션에서 정하고,
+              이미 있는 자격 증명 id 를 다른 사용자에게 다시 묶지 않아야 합니다. 로그인은 저장한 공개키로 서명을, 서버가 낸 일회용 challenge·origin·RP ID·사용자를
+              확인하고 검증이 성공했을 때만 세션을 줘야 합니다. 결과를 계산만 하고 보지 않는 곳, 실패를 로그만 남기거나 catch 한 뒤 토큰 발급으로 넘어가는 곳을
+              찾습니다. OTP 는 건너뛸 수 있는 단계와 시도 횟수 제한을, OAuth 콜백은 state 확인을 봅니다. 깨진 단계마다 발견 하나입니다(CWE-287/347/639).
             - OPEN_REDIRECT(CWE-601)는 백엔드·프론트엔드 모두 확인 방법을 봅니다. includes·indexOf 같은 부분 일치, 끝에 / 가 없는 startsWith, 앞뒤를 고정하지 않은
               정규식은 우회됩니다(https://trusted.com.evil.net). 허용 목록이 있으면 항목도 읽고, 코드·프론트엔드가 실제로 링크하는 주소와 비교합니다.
               그려지지 않는 화면(@if (false), *ngIf="false", v-if="false", {false && ...}, 주석 처리한 마크업)에만 있는 링크는 쓰는 것이 아닙니다.
